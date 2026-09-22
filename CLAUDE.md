@@ -4,14 +4,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Scaffolded via `bun init`, not yet implemented. `index.ts` is still the placeholder
-`bun init` prints; no engine code, tests, or build/lint tooling exist yet. The architecture
-is fully designed — see below — so implementation should follow that design rather than
-inventing structure ad hoc.
+Early implementation. The tracer bullet (#2) works: register node types, execute a linear
+workflow, persist run/node records via the in-memory storage adapter, emit live events.
+Remaining v1 work is tracked as GitHub issues #3–#13 (spec: #1). Follow the architecture
+below rather than inventing structure ad hoc.
 
-Once real source, tests, and tooling exist, update this file with:
-- Build, lint, and test commands (including how to run a single test)
-- Any structure notes that go beyond the architecture summary below
+## Commands
+
+- Install: `bun install`
+- Test (all): `bun test`
+- Test (single file): `bun test test/engine.test.ts`
+- Test (single test by name): `bun test -t "passes each node's output"`
+- Typecheck: `bun run typecheck`
+- No build or lint step yet; the package entry point is `src/index.ts`.
+
+## Structure
+
+- `src/index.ts` — public API; everything a host imports comes from here.
+- `src/engine.ts` — `createEngine` (register, execute, subscribe) and run execution.
+- `src/types.ts` — workflow definition, node type, record, storage adapter and event types.
+- `src/storage/memory.ts` — the in-memory storage adapter.
+- `test/` — tests through the public engine API only, using fake node types defined in
+  the test. Domain vocabulary for names is in `CONTEXT.md`.
 
 ## What antiflow is
 
