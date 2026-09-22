@@ -2,30 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { createEngine, createInMemoryStorage, defineNodeType } from "../src/index.ts";
 import type { EngineEvent } from "../src/index.ts";
-
-const upper = defineNodeType({
-  type: "test.upper",
-  version: 1,
-  inputs: [],
-  outputs: ["out"],
-  config: z.object({}),
-  display: { name: "Upper", description: "Upper-cases the trigger input" },
-  handler: async (input) => String(input).toUpperCase(),
-});
-
-const append = defineNodeType({
-  type: "test.append",
-  version: 1,
-  inputs: ["in"],
-  outputs: ["out"],
-  config: z.object({ suffix: z.string() }),
-  display: { name: "Append" },
-  handler: async (input, config) => `${input.in}${config.suffix}`,
-});
-
-function edge(from: string, to: string) {
-  return { from: { node: from, port: "out" }, to: { node: to, port: "in" } };
-}
+import { append, edge, upper } from "./fixtures.ts";
 
 describe("execute", () => {
   test("runs a single-node workflow on the trigger input and completes the run", async () => {

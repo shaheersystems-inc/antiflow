@@ -10,6 +10,7 @@ import type {
   StorageAdapter,
   WorkflowDefinition,
 } from "./types.ts";
+import { validateWorkflow, WorkflowValidationError } from "./validation.ts";
 
 export interface EngineOptions {
   storage?: StorageAdapter;
@@ -88,7 +89,14 @@ export function createEngine(options: EngineOptions = {}) {
       registry.set(`${nodeType.type}@${nodeType.version}`, nodeType as AnyNodeType);
     },
 
+    /**
+     * Starts a run. Rejects with a `WorkflowValidationError` if the workflow definition is
+     * invalid; in that case nothing runs and no run record is saved.
+     */
     async execute(workflow: WorkflowDefinition, triggerInput: JsonValue): Promise<RunHandle> {
+      const issues = validateWorkflow(workflow, registry);
+      if (issues.length > 0) throw new WorkflowValidationError(issues);
+
       const run: RunRecord = {
         id: crypto.randomUUID(),
         status: "running",
