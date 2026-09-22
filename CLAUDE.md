@@ -105,3 +105,13 @@ inline/user-authored code nodes, built-in expression/templating language in node
 [`docs/design/workflow-engine-design.md`](docs/design/workflow-engine-design.md) for the
 full reasoning behind each of these and everything above — treat it as the source of truth
 and update it (not just this file) if an architectural decision changes.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live in GitHub Issues on shaheersystems/antiflow (via `gh`). See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
