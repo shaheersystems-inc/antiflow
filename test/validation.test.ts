@@ -144,6 +144,37 @@ describe("workflow validation", () => {
     expect(error.issues).toEqual([{ code: "cycle", nodeIds: ["b", "c"], message: expect.any(String) }]);
   });
 
+  test("still reports structured errors for a very long chain of nodes", async () => {
+    const { engine } = setup();
+    engine.register(append);
+    const length = 100_000;
+    const ids = Array.from({ length }, (_, i) => `n${i}`);
+    const workflow: WorkflowDefinition = {
+      nodes: ids.map((id) => ({ id, type: "test.append@1", config: { suffix: "." } })),
+      // n0 → n1 → … → n99999, with a self-loop on the last node.
+      edges: [...ids.slice(1).map((id, i) => edge(ids[i]!, id)), edge(ids.at(-1)!, ids.at(-1)!, { in: "in" })],
+    };
+
+    const error = await rejection(engine.execute(workflow, "hi"));
+
+    expect(error.issues).toContainEqual({ code: "cycle", nodeIds: ["n99999"], message: expect.any(String) });
+  });
+
+  test("rejects node ids used more than once", async () => {
+    const { engine } = setup();
+    const workflow: WorkflowDefinition = {
+      nodes: [
+        { id: "a", type: "test.upper@1", config: {} },
+        { id: "a", type: "test.upper@1", config: {} },
+      ],
+      edges: [],
+    };
+
+    const error = await rejection(engine.execute(workflow, "hi"));
+
+    expect(error.issues).toEqual([{ code: "duplicate-node-id", nodeId: "a", message: expect.any(String) }]);
+  });
+
   test("reports every problem in the workflow in a single error", async () => {
     const { engine, savedRuns, events } = setup();
     engine.register(append);
