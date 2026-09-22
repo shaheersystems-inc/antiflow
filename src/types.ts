@@ -1,0 +1,125 @@
+import type { z } from "zod";
+
+export type JsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
+// ---- Node types -----------------------------------------------------------
+
+export interface Logger {
+  debug(message: string, fields?: Record<string, unknown>): void;
+  info(message: string, fields?: Record<string, unknown>): void;
+  warn(message: string, fields?: Record<string, unknown>): void;
+  error(message: string, fields?: Record<string, unknown>): void;
+}
+
+export interface NodeContext {
+  runId: string;
+  nodeId: string;
+  attempt: number;
+  logger: Logger;
+  signal: AbortSignal;
+}
+
+/**
+ * A node type with no input ports receives the run's trigger input; otherwise it
+ * receives one value per input port, keyed by port name.
+ */
+export type NodeInput<In extends string> = [In] extends [never]
+  ? JsonValue
+  : { [P in In]: JsonValue };
+
+export interface DisplayMetadata {
+  name: string;
+  description?: string;
+  category?: string;
+  icon?: string;
+}
+
+export interface NodeTypeDefinition<
+  Config = unknown,
+  In extends string = string,
+  Out extends string = string,
+> {
+  type: string;
+  version: number;
+  inputs: readonly In[];
+  outputs: readonly Out[];
+  config: z.ZodType<Config>;
+  display: DisplayMetadata;
+  handler: (input: NodeInput<In>, config: Config, context: NodeContext) => Promise<JsonValue>;
+}
+
+/** A node type with its config and port types erased, as held by the registry. */
+export interface AnyNodeType extends Omit<NodeTypeDefinition, "config" | "handler"> {
+  config: z.ZodType;
+  handler: (input: any, config: any, context: NodeContext) => Promise<JsonValue>;
+}
+
+// ---- Workflow definition --------------------------------------------------
+
+export interface WorkflowNode {
+  id: string;
+  /** Node type id, `type@version`. */
+  type: string;
+  config: unknown;
+}
+
+export interface Edge {
+  from: { node: string; port: string };
+  to: { node: string; port: string };
+}
+
+export interface WorkflowDefinition {
+  nodes: WorkflowNode[];
+  edges: Edge[];
+}
+
+// ---- Persisted records ----------------------------------------------------
+
+export type RunStatus = "running" | "completed";
+export type NodeStatus = "pending" | "running" | "succeeded";
+
+export interface RunRecord {
+  id: string;
+  status: RunStatus;
+  startedAt: string;
+  completedAt?: string;
+  workflowSnapshot: WorkflowDefinition;
+  input: JsonValue;
+}
+
+export interface NodeRecord {
+  runId: string;
+  nodeId: string;
+  status: NodeStatus;
+  attempt: number;
+  output?: JsonValue;
+  error?: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+/**
+ * Host-supplied persistence. Writes are whole-record upserts; no transactions are
+ * required.
+ */
+export interface StorageAdapter {
+  saveRun(run: RunRecord): Promise<void>;
+  getRun(runId: string): Promise<RunRecord | undefined>;
+  saveNodeRecord(record: NodeRecord): Promise<void>;
+  listNodeRecords(runId: string): Promise<NodeRecord[]>;
+}
+
+// ---- Events ---------------------------------------------------------------
+
+export type EngineEvent =
+  | { type: "node:start"; runId: string; nodeId: string; attempt: number }
+  | { type: "node:succeeded"; runId: string; nodeId: string; attempt: number }
+  | { type: "run:completed"; runId: string };
+
+export type EngineEventType = EngineEvent["type"];
