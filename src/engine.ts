@@ -1,5 +1,5 @@
 import { plan } from "./planner.ts";
-import type { NodeState } from "./planner.ts";
+import type { NodeResult, NodeState } from "./planner.ts";
 import { NodeTypeRegistry } from "./registry.ts";
 import type { NodeTypeInfo } from "./registry.ts";
 import { createInProcessScheduler } from "./scheduler.ts";
@@ -97,7 +97,7 @@ export function createEngine(options: EngineOptions = {}) {
         logger: tagLogger(logger, { runId: run.id, nodeId: node.id, attempt: 1 }),
         signal: new AbortController().signal,
       });
-      let result: Pick<NodeState, "output" | "outputsByPort">;
+      let result: NodeResult;
       try {
         result = normalizeResult(nodeType, returned);
       } catch (e) {
@@ -171,9 +171,10 @@ function tagLogger(sink: Logger, tags: Record<string, unknown>): Logger {
 
 /**
  * Turns a handler's return value into the node's result: a single-output node's value is its
- * `output`; a multi-port node must return an object of fired ports, all of them declared.
+ * `output`; a multi-port node must return an object of fired ports, all of them declared. A
+ * port whose value is `undefined` is not fired.
  */
-function normalizeResult(nodeType: AnyNodeType, returned: JsonValue): Pick<NodeState, "output" | "outputsByPort"> {
+function normalizeResult(nodeType: AnyNodeType, returned: JsonValue): NodeResult {
   if (nodeType.outputs.length <= 1) return { output: returned ?? null };
   if (typeof returned !== "object" || returned === null || Array.isArray(returned)) {
     throw new Error(
@@ -186,7 +187,7 @@ function normalizeResult(nodeType: AnyNodeType, returned: JsonValue): Pick<NodeS
       `Handler returned undeclared output port(s) ${undeclared.map((p) => `"${p}"`).join(", ")}; node type "${nodeType.type}@${nodeType.version}" declares ${nodeType.outputs.map((p) => `"${p}"`).join(", ")}`,
     );
   }
-  return { outputsByPort: Object.fromEntries(Object.entries(returned).map(([port, value]) => [port, value ?? null])) };
+  return { outputsByPort: Object.fromEntries(Object.entries(returned).filter(([, value]) => value !== undefined)) };
 }
 
 function now(): string {

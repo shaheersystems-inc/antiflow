@@ -148,6 +148,24 @@ describe("skip propagation", () => {
     expect(records.f).toMatchObject({ status: "succeeded", outputsByPort: {} });
     expect(records.a).toMatchObject({ status: "skipped" });
   });
+
+  test("a port returned as undefined is not fired", async () => {
+    const { engine, execute } = setup();
+    engine.register({ ...fire, type: "test.undef", handler: async () => ({ yes: "y", no: undefined }) as never });
+
+    const { records } = await execute({
+      nodes: [
+        node("f", "test.undef@1", { ports: [] }),
+        node("y", "test.append@1", { suffix: "!" }),
+        node("n", "test.append@1", { suffix: "!" }),
+      ],
+      edges: [edge("f", "y", { out: "yes" }), edge("f", "n", { out: "no" })],
+    });
+
+    expect(records.f?.outputsByPort).toEqual({ yes: "y" });
+    expect(records.y).toMatchObject({ status: "succeeded", output: "y!" });
+    expect(records.n).toMatchObject({ status: "skipped" });
+  });
 });
 
 describe("invalid handler results", () => {

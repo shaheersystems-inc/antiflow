@@ -1,10 +1,11 @@
-import type { Edge, JsonValue, NodeStatus, WorkflowDefinition, WorkflowNode } from "./types.ts";
+import type { Edge, JsonValue, NodeRecord, NodeStatus, WorkflowDefinition, WorkflowNode } from "./types.ts";
+
+/** A succeeded node's result, as its node record holds it. */
+export type NodeResult = Pick<NodeRecord, "output" | "outputsByPort">;
 
 /** What the planner needs to know about a node that has been dispatched or decided. */
-export interface NodeState {
+export interface NodeState extends NodeResult {
   status: NodeStatus;
-  output?: JsonValue;
-  outputsByPort?: Record<string, JsonValue>;
 }
 
 export interface Plan {
@@ -30,7 +31,7 @@ export function plan({ nodes, edges }: WorkflowDefinition, states: ReadonlyMap<s
     changed = false;
     for (const node of nodes) {
       if (decided.has(node.id)) continue;
-      if (incoming.get(node.id)!.some((e) => resolve(decided.get(e.from.node), e.from.port) === "never")) {
+      if (incoming.get(node.id)!.some((e) => portResolution(decided.get(e.from.node), e.from.port).kind === "never")) {
         decided.set(node.id, { status: "skipped" });
         skipped.push(node.id);
         changed = true;
@@ -43,10 +44,9 @@ export function plan({ nodes, edges }: WorkflowDefinition, states: ReadonlyMap<s
     if (decided.has(node.id)) continue;
     const inputs: Record<string, JsonValue> = {};
     const allResolved = incoming.get(node.id)!.every((e) => {
-      const resolution = resolve(decided.get(e.from.node), e.from.port);
-      if (typeof resolution !== "object") return false;
-      inputs[e.to.port] = resolution.value;
-      return true;
+      const resolution = portResolution(decided.get(e.from.node), e.from.port);
+      if (resolution.kind === "resolved") inputs[e.to.port] = resolution.value;
+      return resolution.kind === "resolved";
     });
     if (allResolved) ready.push({ node, inputs });
   }
@@ -54,10 +54,15 @@ export function plan({ nodes, edges }: WorkflowDefinition, states: ReadonlyMap<s
   return { ready, skipped: skipped.sort((a, b) => order.get(a)! - order.get(b)!) };
 }
 
+type PortResolution = { kind: "resolved"; value: JsonValue } | { kind: "never" } | { kind: "not-yet" };
+
 /** Whether a node's output port has resolved to a value, never will, or might later. */
-function resolve(source: NodeState | undefined, port: string): { value: JsonValue } | "never" | "not-yet" {
-  if (source?.status === "skipped") return "never";
-  if (source?.status !== "succeeded") return "not-yet";
-  if (!source.outputsByPort) return { value: source.output ?? null };
-  return Object.hasOwn(source.outputsByPort, port) ? { value: source.outputsByPort[port]! } : "never";
+function portResolution(source: NodeState | undefined, port: string): PortResolution {
+  if (source?.status === "skipped") return { kind: "never" };
+  if (source?.status !== "succeeded") return { kind: "not-yet" };
+  // A single-output node fires its one port with its output.
+  if (!source.outputsByPort) return { kind: "resolved", value: source.output ?? null };
+  return Object.hasOwn(source.outputsByPort, port)
+    ? { kind: "resolved", value: source.outputsByPort[port]! }
+    : { kind: "never" };
 }

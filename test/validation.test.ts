@@ -104,6 +104,7 @@ describe("workflow validation", () => {
     expect(error.issues).toEqual([
       { code: "unknown-port", edgeIndex: 0, nodeId: "a", port: "result", direction: "output", message: expect.any(String) },
       { code: "unknown-port", edgeIndex: 0, nodeId: "b", port: "text", direction: "input", message: expect.any(String) },
+      { code: "unconnected-input-port", nodeId: "b", port: "in", message: expect.any(String) },
     ]);
   });
 
@@ -123,6 +124,21 @@ describe("workflow validation", () => {
 
     expect(error.issues).toEqual([
       { code: "multiple-input-edges", nodeId: "b", port: "in", edgeIndexes: [0, 1], message: expect.any(String) },
+    ]);
+  });
+
+  test("rejects a declared input port with no incoming edge", async () => {
+    const { engine } = setup();
+    engine.register(append);
+    const workflow: WorkflowDefinition = {
+      nodes: [{ id: "b", type: "test.append@1", config: { suffix: "!" } }],
+      edges: [],
+    };
+
+    const error = await rejection(engine.execute(workflow, "hi"));
+
+    expect(error.issues).toEqual([
+      { code: "unconnected-input-port", nodeId: "b", port: "in", message: expect.any(String) },
     ]);
   });
 
@@ -192,6 +208,7 @@ describe("workflow validation", () => {
     expect(error.issues.map((i) => i.code).sort()).toEqual([
       "cycle",
       "invalid-config",
+      "unconnected-input-port",
       "unknown-edge-node",
       "unknown-node-type",
     ]);
