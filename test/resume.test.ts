@@ -19,9 +19,11 @@ function steps() {
     outputs: ["out"],
     config: z.object({}),
     display: { name: "Step" },
-    handler: async (input, _config, { nodeId }) => {
+    handler: async (input, _config, { nodeId, signal }) => {
       calls.push(nodeId);
-      if (mode[nodeId] === "hang") await new Promise(() => {});
+      if (mode[nodeId] === "hang") {
+        await new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+      }
       if (mode[nodeId] === "fail") throw new Error(`${nodeId} failed`);
       return `${input.in}>${nodeId}`;
     },
@@ -37,7 +39,17 @@ function engineOver(storage: StorageAdapter) {
   engine.register(step.nodeType);
   const events: EngineEvent[] = [];
   engine.subscribe((e) => events.push(e));
-  return { engine, events, ...step };
+  /** Resolves once `node:start` has been emitted for `nodeId`. */
+  const untilStarted = (nodeId: string) =>
+    new Promise<void>((resolve) => {
+      const stop = engine.subscribe((e) => {
+        if (e.type === "node:start" && e.nodeId === nodeId) {
+          stop();
+          resolve();
+        }
+      });
+    });
+  return { engine, events, untilStarted, ...step };
 }
 
 // start → b → c
@@ -93,8 +105,9 @@ describe("resume", () => {
     const storage = createInMemoryStorage();
     const first = engineOver(storage);
     first.mode.b = "hang";
+    const bStarted = first.untilStarted("b");
     const run = await first.engine.execute(chain, "go");
-    await sleep(10);
+    await bStarted;
     // The first engine "crashes" with b in flight.
     expect(await statuses(storage, run.id)).toEqual({ start: "succeeded", b: "running", c: "pending" });
 
@@ -227,5 +240,79 @@ describe("resume", () => {
     mode.b = "hang";
     const hanging = await engine.execute(chain, "go");
     await expect(engine.resume(hanging.id)).rejects.toThrow(/already running/);
+    await engine.cancel(hanging.id);
+    await hanging.finished;
+  });
+
+  test("resume refusals carry a reason", async () => {
+    const storage = createInMemoryStorage();
+    const { engine } = engineOver(storage);
+    const done = await engine.execute(chain, "go");
+    await done.finished;
+
+    const reasons = await Promise.all(
+      ["no-such-run", done.id].map((id) => engine.resume(id).catch((e: ResumeError) => [e.name, e.reason])),
+    );
+    expect(reasons).toEqual([
+      ["ResumeError", "not-found"],
+      ["ResumeError", "not-resumable"],
+    ]);
+  });
+
+  test("edits to the workflow definition after execute() don't reach the resumed run", async () => {
+    const storage = createInMemoryStorage();
+    const { engine, mode } = engineOver(storage);
+    engine.register(append);
+    mode.b = "fail";
+    const workflow: WorkflowDefinition = {
+      nodes: [node("start", "test.upper@1"), node("b", "test.step@1"), node("c", "test.append@1", { suffix: "!" })],
+      edges: [edge("start", "b"), edge("b", "c")],
+    };
+    const run = await engine.execute(workflow, "go");
+    await run.finished;
+
+    (workflow.nodes[2]!.config as { suffix: string }).suffix = "?";
+    workflow.nodes.push(node("d", "test.append@1", { suffix: "." }));
+    mode.b = "ok";
+    await (await engine.resume(run.id)).finished;
+
+    const records = await storage.listNodeRecords(run.id);
+    expect(records.find((r) => r.nodeId === "c")?.output).toBe("GO>b!");
+    expect(records.map((r) => r.nodeId)).not.toContain("d");
+  });
+
+  test("a cancel issued while a resume is being prepared cancels the resumed run", async () => {
+    const storage = createInMemoryStorage();
+    const { engine, calls, mode } = engineOver(storage);
+    mode.b = "fail";
+    const run = await engine.execute(chain, "go");
+    await run.finished;
+    mode.b = "ok";
+
+    const resuming = engine.resume(run.id);
+    await engine.cancel(run.id);
+    const finished = await (await resuming).finished;
+
+    expect(finished.status).toBe("cancelled");
+    expect(calls).toEqual(["b"]);
+    expect(await statuses(storage, run.id)).toEqual({ start: "succeeded", b: "cancelled", c: "cancelled" });
+  });
+
+  test("cancel finalizes a run a crashed engine left cancelling", async () => {
+    const storage = createInMemoryStorage();
+    const first = engineOver(storage);
+    first.mode.b = "hang";
+    const bStarted = first.untilStarted("b");
+    const run = await first.engine.execute(chain, "go");
+    await bStarted;
+    // The engine crashes mid-cancel: the run is recorded cancelling, nothing more.
+    await storage.saveRun({ ...(await storage.getRun(run.id))!, status: "cancelling" });
+
+    const second = engineOver(storage);
+    await second.engine.cancel(run.id);
+
+    expect((await storage.getRun(run.id))?.status).toBe("cancelled");
+    expect(await statuses(storage, run.id)).toEqual({ start: "succeeded", b: "cancelled", c: "cancelled" });
+    expect(second.events).toEqual([{ type: "run:cancelled", runId: run.id }]);
   });
 });

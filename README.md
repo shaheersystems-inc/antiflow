@@ -27,6 +27,10 @@ than once for the same node of the same run:
 So write handlers to be retry-safe: make side effects idempotent (e.g. pass an idempotency
 key derived from `context.runId` and `context.nodeId`), and honour `context.signal`.
 
+Hosts: only one engine may drive a run at a time. Resume a `running` run only once you know
+the engine that was running it is gone. A custom backoff function isn't persisted, so a
+resumed node that had one falls back to the default backoff.
+
 ## Install
 
 ```bash
