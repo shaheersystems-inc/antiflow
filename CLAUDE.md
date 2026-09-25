@@ -22,6 +22,8 @@ below rather than inventing structure ad hoc.
 
 - `src/index.ts` — public API; everything a host imports comes from here.
 - `src/engine.ts` — `createEngine` (register, execute, subscribe) and run execution.
+- `src/registry.ts` — the node type registry: registration checks and `listNodeTypes()` info.
+- `src/validation.ts` — workflow definition validation (structured `ValidationIssue`s).
 - `src/types.ts` — workflow definition, node type, record, storage adapter and event types.
 - `src/storage/memory.ts` — the in-memory storage adapter.
 - `test/` — tests through the public engine API only, using fake node types defined in

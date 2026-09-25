@@ -1,3 +1,5 @@
+import { NodeTypeRegistry } from "./registry.ts";
+import type { NodeTypeInfo } from "./registry.ts";
 import { createInMemoryStorage } from "./storage/memory.ts";
 import type {
   AnyNodeType,
@@ -27,7 +29,7 @@ export interface RunHandle {
 export function createEngine(options: EngineOptions = {}) {
   const storage = options.storage ?? createInMemoryStorage();
   const logger = options.logger ?? silentLogger;
-  const registry = new Map<string, AnyNodeType>();
+  const registry = new NodeTypeRegistry();
   const listeners = new Set<(event: EngineEvent) => void>();
 
   const emit = (event: EngineEvent) => {
@@ -83,10 +85,20 @@ export function createEngine(options: EngineOptions = {}) {
       return () => listeners.delete(listener);
     },
 
+    /**
+     * Adds a node type to the registry under `type@version`. Several versions of a type may
+     * be registered at once. Throws `NodeTypeRegistrationError` if that `type@version` is
+     * already registered or the definition is malformed.
+     */
     register<Config, In extends string, Out extends string>(
       nodeType: NodeTypeDefinition<Config, In, Out>,
     ): void {
-      registry.set(`${nodeType.type}@${nodeType.version}`, nodeType as AnyNodeType);
+      registry.register(nodeType as AnyNodeType);
+    },
+
+    /** Every registered node type, in registration order, as plain JSON for a UI's node palette. */
+    listNodeTypes(): NodeTypeInfo[] {
+      return registry.list();
     },
 
     /**
