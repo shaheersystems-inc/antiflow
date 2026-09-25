@@ -272,6 +272,17 @@ weigh the same tradeoffs rather than re-litigating from scratch.
   persistence format later is exactly the kind of thing that's cheap now and painful after
   the fact — same reasoning as node-type versioning and workflow snapshotting above._
 
+  Concretely: `createEngine({ credentials })` takes a `CredentialStore` with one method,
+  `resolve(credentialId, { runId, nodeId })`. A node type declares a reference field with
+  the exported `credentialRef` schema. Before each attempt, every `{ credentialId }` object
+  in the node's config is resolved, and the secrets are handed to the handler as
+  `context.credentials[credentialId]`. The snapshot and records keep only the reference.
+  Everything derived from the attempt is redacted by exact string match (any secret string
+  leaf of 4+ characters becomes `[redacted]`) before it leaves the attempt: logger messages
+  and fields, the returned output (so downstream nodes see it redacted too), and the error.
+  A reference that can't be resolved, or has no store to resolve it, fails the attempt with
+  an error naming only the credential id, never the store's own error.
+
 ## Open / not yet decided
 
 Nothing remaining in the architecture-level design tree was left open at the end of the

@@ -1,3 +1,5 @@
+import { createRedactor, credentialIds, redactingLogger } from "./credentials.ts";
+import type { CredentialStore } from "./credentials.ts";
 import type { NodeResult, NodeState } from "./planner.ts";
 import type { Scheduler } from "./scheduler.ts";
 import { now, sleep } from "./time.ts";
@@ -18,6 +20,7 @@ export interface RunnerContext {
   scheduler: Scheduler;
   logger: Logger;
   emit: (event: EngineEvent) => void;
+  credentials?: CredentialStore;
 }
 
 const DEFAULT_DELAY_MS = 1000;
@@ -92,7 +95,7 @@ type AttemptOutcome =
  * counts against the concurrency caps.
  */
 function runAttempt(
-  { storage, scheduler, logger, emit }: RunnerContext,
+  { storage, scheduler, logger, emit, credentials }: RunnerContext,
   node: WorkflowNode,
   nodeType: AnyNodeType,
   input: JsonValue,
@@ -108,10 +111,19 @@ function runAttempt(
           await storage.saveNodeRecord(record);
           const attempt = { runId: record.runId, nodeId: record.nodeId, attempt: record.attempt };
           emit({ type: "node:start", ...attempt });
+          const resolved = await resolveCredentials(credentials, node, record);
+          if ("error" in resolved) return resolve({ kind: "failed", error: resolved.error });
+          // Nothing derived from this attempt leaves it without the secrets redacted.
+          const redact = createRedactor(Object.values(resolved.credentials));
           const controller = new AbortController();
           const abortOnCancel = () => controller.abort(new Error("Run cancelled"));
           cancel.addEventListener("abort", abortOnCancel, { once: true });
-          const context = { ...attempt, logger: tagLogger(logger, attempt), signal: controller.signal };
+          const context = {
+            ...attempt,
+            logger: redactingLogger(tagLogger(logger, attempt), redact),
+            signal: controller.signal,
+            credentials: resolved.credentials,
+          };
           let handling: Promise<JsonValue>;
           try {
             handling = Promise.resolve(nodeType.handler(input, nodeType.config.parse(node.config), context));
@@ -120,9 +132,9 @@ function runAttempt(
           }
           try {
             const returned = await withTimeout(handling, node.timeoutMs, controller);
-            resolve({ kind: "succeeded", result: normalizeResult(nodeType, returned) });
+            resolve({ kind: "succeeded", result: redact(normalizeResult(nodeType, returned)) });
           } catch (e) {
-            resolve({ kind: "failed", error: e instanceof Error ? e.message : String(e) });
+            resolve({ kind: "failed", error: redact(e instanceof Error ? e.message : String(e)) });
           }
           try {
             await handling.catch(() => {});
@@ -135,6 +147,29 @@ function runAttempt(
       // The scheduler rejects with the cancel's reason if the attempt never got a slot.
       .catch((error) => (cancel.aborted ? resolve({ kind: "not-started" }) : reject(error)));
   });
+}
+
+/**
+ * Resolves every credential referenced in the node's config, freshly for each attempt. A
+ * failure is reported without the store's own error, which might contain secrets.
+ */
+async function resolveCredentials(
+  store: CredentialStore | undefined,
+  node: WorkflowNode,
+  { runId, nodeId }: NodeRecord,
+): Promise<{ credentials: Record<string, JsonValue> } | { error: string }> {
+  const ids = credentialIds(node.config);
+  if (ids.length === 0) return { credentials: {} };
+  if (!store) return { error: `Node config references credentials, but no credential store was supplied to the engine` };
+  const credentials: Record<string, JsonValue> = {};
+  for (const id of ids) {
+    try {
+      credentials[id] = await store.resolve(id, { runId, nodeId });
+    } catch {
+      return { error: `Credential "${id}" could not be resolved` };
+    }
+  }
+  return { credentials };
 }
 
 /**

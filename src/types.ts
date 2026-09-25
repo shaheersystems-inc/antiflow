@@ -23,6 +23,12 @@ export interface NodeContext {
   attempt: number;
   logger: Logger;
   signal: AbortSignal;
+  /**
+   * The resolved secrets for every `{ credentialId }` reference in the node's config, keyed
+   * by credential id. They live only here: anything the handler logs, returns or throws is
+   * redacted before it's persisted or emitted.
+   */
+  credentials: Readonly<Record<string, JsonValue>>;
 }
 
 /**
