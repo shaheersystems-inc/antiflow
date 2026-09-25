@@ -23,6 +23,7 @@ below rather than inventing structure ad hoc.
 - `src/index.ts` — public API; everything a host imports comes from here.
 - `src/engine.ts` — `createEngine` (register, execute, subscribe) and run execution.
 - `src/credentials.ts` — `CredentialStore`, the `credentialRef` schema and secret redaction.
+- `src/logger.ts` — logger wrappers (tagging, mapping).
 - `src/planner.ts` — pure graph planner: which nodes are ready and which are skipped.
 - `src/registry.ts` — the node type registry: registration checks and `listNodeTypes()` info.
 - `src/runner.ts` — the node runner: attempts, timeouts, retries/backoff, result normalizing.

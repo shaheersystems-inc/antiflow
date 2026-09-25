@@ -1,4 +1,5 @@
-import { createRedactor, credentialIds, redactingLogger } from "./credentials.ts";
+import { createRedactor, redactingLogger, resolveCredentials } from "./credentials.ts";
+import { tagLogger } from "./logger.ts";
 import type { CredentialStore } from "./credentials.ts";
 import type { NodeResult, NodeState } from "./planner.ts";
 import type { Scheduler } from "./scheduler.ts";
@@ -111,7 +112,7 @@ function runAttempt(
           await storage.saveNodeRecord(record);
           const attempt = { runId: record.runId, nodeId: record.nodeId, attempt: record.attempt };
           emit({ type: "node:start", ...attempt });
-          const resolved = await resolveCredentials(credentials, node, record);
+          const resolved = await resolveCredentials(credentials, node.config, { runId: record.runId, nodeId: record.nodeId });
           if ("error" in resolved) return resolve({ kind: "failed", error: resolved.error });
           // Nothing derived from this attempt leaves it without the secrets redacted.
           const redact = createRedactor(Object.values(resolved.credentials));
@@ -147,29 +148,6 @@ function runAttempt(
       // The scheduler rejects with the cancel's reason if the attempt never got a slot.
       .catch((error) => (cancel.aborted ? resolve({ kind: "not-started" }) : reject(error)));
   });
-}
-
-/**
- * Resolves every credential referenced in the node's config, freshly for each attempt. A
- * failure is reported without the store's own error, which might contain secrets.
- */
-async function resolveCredentials(
-  store: CredentialStore | undefined,
-  node: WorkflowNode,
-  { runId, nodeId }: NodeRecord,
-): Promise<{ credentials: Record<string, JsonValue> } | { error: string }> {
-  const ids = credentialIds(node.config);
-  if (ids.length === 0) return { credentials: {} };
-  if (!store) return { error: `Node config references credentials, but no credential store was supplied to the engine` };
-  const credentials: Record<string, JsonValue> = {};
-  for (const id of ids) {
-    try {
-      credentials[id] = await store.resolve(id, { runId, nodeId });
-    } catch {
-      return { error: `Credential "${id}" could not be resolved` };
-    }
-  }
-  return { credentials };
 }
 
 /**
@@ -230,12 +208,4 @@ function normalizeResult(nodeType: AnyNodeType, returned: JsonValue): NodeResult
     );
   }
   return { outputsByPort: Object.fromEntries(Object.entries(returned).filter(([, value]) => value !== undefined)) };
-}
-
-function tagLogger(sink: Logger, tags: Record<string, unknown>): Logger {
-  const level =
-    (method: keyof Logger) =>
-    (message: string, fields?: Record<string, unknown>) =>
-      sink[method](message, { ...tags, ...fields });
-  return { debug: level("debug"), info: level("info"), warn: level("warn"), error: level("error") };
 }
