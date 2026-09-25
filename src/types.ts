@@ -53,6 +53,11 @@ export interface NodeTypeDefinition<
   display: DisplayMetadata;
   /** Trigger-capable: declares no input ports, so a UI can show where a run begins. Metadata only. */
   trigger?: boolean;
+  /**
+   * Returns a bare value when the node type declares one output port. With several output
+   * ports it returns an object holding only the ports it fired; the others are not fired, so
+   * nodes wired to them are skipped. Returning an undeclared port fails the node.
+   */
   handler: (input: NodeInput<In>, config: Config, context: NodeContext) => Promise<JsonValue>;
 }
 
@@ -83,8 +88,8 @@ export interface WorkflowDefinition {
 
 // ---- Persisted records ----------------------------------------------------
 
-export type RunStatus = "running" | "completed";
-export type NodeStatus = "pending" | "running" | "succeeded";
+export type RunStatus = "running" | "completed" | "failed";
+export type NodeStatus = "pending" | "running" | "succeeded" | "failed" | "skipped";
 
 export interface RunRecord {
   id: string;
@@ -100,7 +105,10 @@ export interface NodeRecord {
   nodeId: string;
   status: NodeStatus;
   attempt: number;
+  /** A single-output node's result. */
   output?: JsonValue;
+  /** A multi-port node's result: only the ports it fired. */
+  outputsByPort?: Record<string, JsonValue>;
   error?: string;
   startedAt?: string;
   completedAt?: string;
@@ -122,6 +130,9 @@ export interface StorageAdapter {
 export type EngineEvent =
   | { type: "node:start"; runId: string; nodeId: string; attempt: number }
   | { type: "node:succeeded"; runId: string; nodeId: string; attempt: number }
-  | { type: "run:completed"; runId: string };
+  | { type: "node:failed"; runId: string; nodeId: string; attempt: number; error: string }
+  | { type: "node:skipped"; runId: string; nodeId: string }
+  | { type: "run:completed"; runId: string }
+  | { type: "run:failed"; runId: string };
 
 export type EngineEventType = EngineEvent["type"];
