@@ -31,6 +31,12 @@ Hosts: only one engine may drive a run at a time. Resume a `running` run only on
 the engine that was running it is gone. A custom backoff function isn't persisted, so a
 resumed node that had one falls back to the default backoff.
 
+## Storage adapters
+
+Execution state is persisted through a host-supplied storage adapter. See
+[`docs/storage-adapters.md`](docs/storage-adapters.md) for the interface, its rules and the
+conformance suite in `antiflow/testing`.
+
 ## Install
 
 ```bash

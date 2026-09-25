@@ -45,8 +45,17 @@ interface StorageAdapter {
    free.
 5. **Keep runs apart.** Records of one run are never returned for another.
 
-Timestamps are ISO 8601 strings. Adapters don't need to understand record contents beyond
-their keys.
+6. **Concurrent saves are all kept.** The engine saves several node records of one run at
+   once. An adapter that stores a run's node records together, for example in a single
+   blob, must not lose any of them to a read-modify-write race.
+7. **Keys are exact.** A node record's key is the pair (`runId`, `nodeId`). Keys built by
+   joining the two, such as `` `${runId}:${nodeId}` ``, can collide. Store the pair
+   separately, or escape it.
+
+`getRun` returns `undefined`, not `null`, for a run that was never saved. Timestamps are ISO
+8601 strings. Treat them as opaque strings that come back exactly as saved: a `timestamptz`
+column that reformats them won't do. Adapters don't need to understand record contents
+beyond their keys.
 
 ## Conformance suite
 
