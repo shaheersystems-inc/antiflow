@@ -1,5 +1,7 @@
 import { NodeTypeRegistry } from "./registry.ts";
 import type { NodeTypeInfo } from "./registry.ts";
+import { createInProcessScheduler } from "./scheduler.ts";
+import type { ConcurrencyOptions } from "./scheduler.ts";
 import { createInMemoryStorage } from "./storage/memory.ts";
 import type {
   AnyNodeType,
@@ -11,6 +13,7 @@ import type {
   RunRecord,
   StorageAdapter,
   WorkflowDefinition,
+  WorkflowNode,
 } from "./types.ts";
 import { validateWorkflow, WorkflowValidationError } from "./validation.ts";
 
@@ -18,6 +21,8 @@ export interface EngineOptions {
   storage?: StorageAdapter;
   /** Sink for node logs. Each entry is tagged with runId, nodeId and attempt. Defaults to discarding. */
   logger?: Logger;
+  /** Caps on how many handlers run at once; configured per engine, never in workflow definitions. */
+  concurrency?: ConcurrencyOptions;
 }
 
 export interface RunHandle {
@@ -30,6 +35,7 @@ export function createEngine(options: EngineOptions = {}) {
   const storage = options.storage ?? createInMemoryStorage();
   const logger = options.logger ?? silentLogger;
   const registry = new NodeTypeRegistry();
+  const scheduler = createInProcessScheduler(options.concurrency);
   const listeners = new Set<(event: EngineEvent) => void>();
 
   const emit = (event: EngineEvent) => {
@@ -39,19 +45,39 @@ export function createEngine(options: EngineOptions = {}) {
   async function runWorkflow(run: RunRecord): Promise<RunRecord> {
     const { nodes, edges } = run.workflowSnapshot;
     const outputs = new Map<string, JsonValue>();
-    const pending = new Set(nodes.map((n) => n.id));
+    const started = new Set<string>();
+    const inFlight = new Map<string, Promise<void>>();
 
     const incoming = (nodeId: string) => edges.filter((e) => e.to.node === nodeId);
     const isReady = (nodeId: string) => incoming(nodeId).every((e) => outputs.has(e.from.node));
 
-    while (pending.size > 0) {
-      const node = nodes.find((n) => pending.has(n.id) && isReady(n.id))!;
-      pending.delete(node.id);
-      const nodeType = registry.get(node.type)!;
-      const input =
-        nodeType.inputs.length === 0
-          ? run.input
-          : Object.fromEntries(incoming(node.id).map((e) => [e.to.port, outputs.get(e.from.node)!]));
+    // Start every node whose inputs have all resolved, then wait for any in-flight node to
+    // settle, which may make more nodes ready.
+    while (true) {
+      for (const node of nodes) {
+        if (started.has(node.id) || !isReady(node.id)) continue;
+        started.add(node.id);
+        const input = Object.fromEntries(incoming(node.id).map((e) => [e.to.port, outputs.get(e.from.node)!]));
+        const settled = runNode(run, node, input).then((output) => {
+          outputs.set(node.id, output);
+          inFlight.delete(node.id);
+        });
+        inFlight.set(node.id, settled);
+      }
+      if (inFlight.size === 0) break;
+      await Promise.race(inFlight.values());
+    }
+    const finished: RunRecord = { ...run, status: "completed", completedAt: now() };
+    await storage.saveRun(finished);
+    emit({ type: "run:completed", runId: run.id });
+    return finished;
+  }
+
+  /** Runs one node once the scheduler grants it a slot, persisting and announcing its progress. */
+  function runNode(run: RunRecord, node: WorkflowNode, portInputs: Record<string, JsonValue>): Promise<JsonValue> {
+    const nodeType = registry.get(node.type)!;
+    const input = nodeType.inputs.length === 0 ? run.input : portInputs;
+    return scheduler.run(node.type, async () => {
       const record: NodeRecord = {
         runId: run.id,
         nodeId: node.id,
@@ -68,14 +94,10 @@ export function createEngine(options: EngineOptions = {}) {
         logger: tagLogger(logger, { runId: run.id, nodeId: node.id, attempt: 1 }),
         signal: new AbortController().signal,
       });
-      outputs.set(node.id, output);
       await storage.saveNodeRecord({ ...record, status: "succeeded", output, completedAt: now() });
       emit({ type: "node:succeeded", runId: run.id, nodeId: node.id, attempt: 1 });
-    }
-    const finished: RunRecord = { ...run, status: "completed", completedAt: now() };
-    await storage.saveRun(finished);
-    emit({ type: "run:completed", runId: run.id });
-    return finished;
+      return output;
+    });
   }
 
   return {

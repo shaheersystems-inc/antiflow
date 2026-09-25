@@ -119,6 +119,10 @@ weigh the same tradeoffs rather than re-litigating from scratch.
   _Why: most nodes are I/O-bound (HTTP calls etc.); sequential-only execution would waste
   most of the value of a DAG engine._
 
+  Configured as `createEngine({ concurrency: { global, perNodeType } })`. Caps apply across
+  every run of the engine; `perNodeType` is keyed by node type id (`type@version`). A node
+  waiting on its node type's cap doesn't hold back other node types queued behind it.
+
 - **Execution locality**: Strictly in-process for v1 — the scheduler calls node handlers
   directly as async functions in the same process/event loop as the engine. No message-
   passing/serialization constraint on handler input/output. The scheduler itself sits
