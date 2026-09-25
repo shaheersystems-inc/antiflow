@@ -277,9 +277,13 @@ weigh the same tradeoffs rather than re-litigating from scratch.
   the exported `credentialRef` schema. Before each attempt, every `{ credentialId }` object
   in the node's config is resolved, and the secrets are handed to the handler as
   `context.credentials[credentialId]`. The snapshot and records keep only the reference.
-  Everything derived from the attempt is redacted by exact string match (any secret string
-  leaf of 4+ characters becomes `[redacted]`) before it leaves the attempt: logger messages
-  and fields, the returned output (so downstream nodes see it redacted too), and the error.
+  Everything derived from the attempt is redacted before it leaves the attempt: logger
+  messages and fields, the returned output (so downstream nodes see it redacted too), and
+  the error. Every string or number leaf of a secret counts, if it is 4+ characters as text.
+  Occurrences inside strings, raw or JSON-escaped, become `[redacted]`, with overlapping
+  occurrences merged, and equal numbers are replaced too. Matching is exact, so a transformed
+  secret (base64, hashed, split) isn't caught. That is a documented limit of the guarantee.
+  Any object shaped exactly `{ credentialId: string }` in config is treated as a reference.
   A reference that can't be resolved, or has no store to resolve it, fails the attempt with
   an error naming only the credential id, never the store's own error.
 

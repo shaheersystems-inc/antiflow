@@ -229,4 +229,80 @@ describe("credentials", () => {
 
     expect(credentials).toEqual({});
   });
+
+  describe("redaction edge cases", () => {
+    /** Runs a node whose handler gets `secrets` and does `act` with them; returns everything recorded. */
+    async function leakWith(
+      secrets: Record<string, JsonValue>,
+      act: (secret: (id: string) => JsonValue, log: (message: string, fields?: Record<string, unknown>) => void) => JsonValue,
+    ) {
+      const { store } = fakeStore(secrets);
+      const { engine, storage, logs } = setup({ store });
+      engine.register(
+        defineNodeType({
+          type: "test.leak",
+          version: 1,
+          inputs: [],
+          outputs: ["out"],
+          config: z.object({ refs: z.array(credentialRef) }),
+          display: { name: "Leak" },
+          handler: async (_input, _config, context) =>
+            act((id) => context.credentials[id]!, (message, fields) => context.logger.info(message, fields)),
+        }),
+      );
+      const refs = Object.keys(secrets).map((credentialId) => ({ credentialId }));
+      const run = await engine.execute({ nodes: [node("leak", "test.leak@1", { refs })], edges: [] }, null);
+      await run.finished;
+      const [record] = await storage.listNodeRecords(run.id);
+      return { record: record!, logs };
+    }
+
+    test("redacts numeric secrets, as numbers and as text", async () => {
+      const { record } = await leakWith({ pin: 480213 }, (secret) => ({
+        raw: secret("pin"),
+        text: `pin ${secret("pin")}`,
+        other: 42,
+      }));
+      expect(record.output).toEqual({ raw: "[redacted]", text: "pin [redacted]", other: 42 });
+    });
+
+    test("redacts a secret that appears JSON-escaped", async () => {
+      const key = "-----BEGIN KEY-----\nABCDEF\"quoted\"\n-----END KEY-----";
+      const { record } = await leakWith({ key }, (secret) => JSON.stringify({ body: secret("key") }));
+      expect(record.output).toBe('{"body":"[redacted]"}');
+    });
+
+    test("redacts overlapping secrets completely", async () => {
+      const { record } = await leakWith({ one: "abcdef", two: "defghi" }, () => "x abcdefghi y");
+      expect(record.output).toBe("x [redacted] y");
+    });
+
+    test("keeps keys apart when redacting makes them equal", async () => {
+      const { record } = await leakWith({ one: "alpha-key", two: "bravo-key" }, (secret) => ({
+        [String(secret("one"))]: 1,
+        [String(secret("two"))]: 2,
+      }));
+      expect(record.output).toEqual({ "[redacted]": 1, "[redacted]#2": 2 });
+    });
+
+    test("logs cyclic fields and errors without leaking or throwing", async () => {
+      const { record, logs } = await leakWith({ api: SECRET }, (secret, log) => {
+        const request: Record<string, unknown> = { token: secret("api") };
+        request.self = request;
+        log("failed", { request, error: new Error(`rejected ${secret("api")}`) });
+        return "done";
+      });
+      expect(record.status).toBe("succeeded");
+      expect(logs).toEqual([
+        {
+          message: "failed",
+          fields: expect.objectContaining({
+            request: { token: "[redacted]", self: "[circular]" },
+            error: expect.objectContaining({ name: "Error", message: "rejected [redacted]" }),
+          }),
+        },
+      ]);
+      expect(JSON.stringify(logs)).not.toContain(SECRET);
+    });
+  });
 });
