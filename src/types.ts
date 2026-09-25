@@ -58,6 +58,9 @@ export interface NodeTypeDefinition<
    * ports it returns an object holding only the ports it fired; the others (and any set to
    * `undefined`) are not fired, so nodes wired to them are skipped. Returning an undeclared
    * port fails the node. A single-output node always fires its port.
+   *
+   * Execution is at-least-once: retries and resumes may call the handler again for the same
+   * node of the same run, so it must be retry-safe (see the README).
    */
   handler: (input: NodeInput<In>, config: Config, context: NodeContext) => Promise<JsonValue>;
 }

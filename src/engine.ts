@@ -22,6 +22,22 @@ import type {
 import { now } from "./time.ts";
 import { validateWorkflow, WorkflowValidationError } from "./validation.ts";
 
+/** Thrown by `resume()` when node type ids recorded in a run's snapshot aren't registered. */
+export class ResumeError extends Error {
+  constructor(
+    readonly runId: string,
+    /** Each node whose `type@version` isn't registered. */
+    readonly unregistered: { nodeId: string; type: string }[],
+  ) {
+    super(
+      `Can't resume run "${runId}": node types it was started with aren't registered:\n${unregistered
+        .map((n) => `- node "${n.nodeId}" uses "${n.type}"`)
+        .join("\n")}`,
+    );
+    this.name = "ResumeError";
+  }
+}
+
 export interface EngineOptions {
   storage?: StorageAdapter;
   /** Sink for node logs. Each entry is tagged with runId, nodeId and attempt. Defaults to discarding. */
@@ -59,13 +75,22 @@ export function createEngine(options: EngineOptions = {}) {
   };
   const runner: RunnerContext = { storage, scheduler, logger, emit };
   const activeRuns = new Map<string, ActiveRun>();
+  /** Runs whose resume is being prepared. */
+  const resuming = new Set<string>();
 
-  /** Runs `run` to its end against `snapshot`, which may hold values storage can't (backoff functions). */
-  async function runWorkflow(run: RunRecord, snapshot: WorkflowDefinition): Promise<RunRecord> {
+  /**
+   * Runs `run` to its end against `snapshot`, starting from `decided`: the nodes whose state
+   * is already final (on resume, those that succeeded or were skipped).
+   */
+  async function runWorkflow(
+    run: RunRecord,
+    snapshot: WorkflowDefinition,
+    decided: ReadonlyMap<string, NodeState> = new Map(),
+  ): Promise<RunRecord> {
     const active: ActiveRun = { run, cancel: new AbortController() };
     activeRuns.set(run.id, active);
     try {
-      return await driveRun(run, snapshot, active);
+      return await driveRun(run, snapshot, decided, active);
     } finally {
       activeRuns.delete(run.id);
     }
@@ -74,14 +99,17 @@ export function createEngine(options: EngineOptions = {}) {
   async function driveRun(
     run: RunRecord,
     snapshot: WorkflowDefinition,
+    decided: ReadonlyMap<string, NodeState>,
     active: ActiveRun,
   ): Promise<RunRecord> {
     const cancel = active.cancel.signal;
-    const states = new Map<string, NodeState>();
+    const states = new Map(decided);
     const inFlight = new Map<string, Promise<void>>();
-    // Every node starts out pending; nodes downstream of a failure stay that way.
+    // Every undecided node starts out pending; nodes downstream of a failure stay that way.
     await Promise.all(
-      snapshot.nodes.map(({ id }) => storage.saveNodeRecord({ runId: run.id, nodeId: id, status: "pending", attempt: 0 })),
+      snapshot.nodes
+        .filter(({ id }) => !decided.has(id))
+        .map(({ id }) => storage.saveNodeRecord({ runId: run.id, nodeId: id, status: "pending", attempt: 0 })),
     );
 
     // Skip or start every node the planner can decide, then wait for an in-flight node to
@@ -151,6 +179,45 @@ export function createEngine(options: EngineOptions = {}) {
       nodeType: NodeTypeDefinition<Config, In, Out>,
     ): void {
       registry.register(nodeType as AnyNodeType);
+    },
+
+    /**
+     * Continues a run from its persisted state, against its snapshot, e.g. after a process
+     * restart or to retry failed nodes. Nodes recorded as succeeded or skipped keep their
+     * results; every other node (failed, or interrupted mid-run) runs again from a fresh
+     * first attempt, then the run continues as usual. Execution is at-least-once: a node
+     * interrupted after its handler finished but before its result was persisted runs again.
+     *
+     * Rejects with `ResumeError` if a node type id in the snapshot isn't registered, and
+     * refuses a run that doesn't exist, is already running in this engine, or has been
+     * completed or cancelled.
+     */
+    async resume(runId: string): Promise<RunHandle> {
+      if (activeRuns.has(runId) || resuming.has(runId)) throw new Error(`Run "${runId}" is already running in this engine`);
+      resuming.add(runId);
+      try {
+        const run = await storage.getRun(runId);
+        if (!run) throw new Error(`Run "${runId}" not found`);
+        if (run.status !== "running" && run.status !== "failed") {
+          throw new Error(`Run "${runId}" is ${run.status} and can't be resumed`);
+        }
+        const unregistered = run.workflowSnapshot.nodes
+          .filter((node) => !registry.get(node.type))
+          .map((node) => ({ nodeId: node.id, type: node.type }));
+        if (unregistered.length > 0) throw new ResumeError(runId, unregistered);
+
+        const decided = new Map<string, NodeState>();
+        for (const { nodeId, status, output, outputsByPort } of await storage.listNodeRecords(runId)) {
+          if (status === "succeeded") decided.set(nodeId, { status, output, outputsByPort });
+          if (status === "skipped") decided.set(nodeId, { status });
+        }
+        const { completedAt: _, ...rest } = run;
+        const resumed: RunRecord = { ...rest, status: "running" };
+        await storage.saveRun(resumed);
+        return { id: runId, finished: runWorkflow(resumed, deepFreeze(run.workflowSnapshot), decided) };
+      } finally {
+        resuming.delete(runId);
+      }
     },
 
     /**
@@ -227,5 +294,14 @@ function takeSnapshot(workflow: WorkflowDefinition): { snapshot: WorkflowDefinit
     const backoff = backoffs.get(node.id);
     if (backoff) node.retry!.backoff = backoff;
   }
-  return { snapshot, stored };
+  return { snapshot: deepFreeze(snapshot), stored };
+}
+
+/** Freezes `value` and everything reachable from it, so a snapshot can't change mid-run. */
+function deepFreeze<T>(value: T): T {
+  if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) deepFreeze(child);
+  }
+  return value;
 }
