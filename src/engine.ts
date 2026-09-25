@@ -57,8 +57,12 @@ export function createEngine(options: EngineOptions = {}) {
       for (const node of nodes) {
         if (started.has(node.id) || !isReady(node.id)) continue;
         started.add(node.id);
-        const input = Object.fromEntries(incoming(node.id).map((e) => [e.to.port, outputs.get(e.from.node)!]));
-        const settled = runNode(run, node, input).then((output) => {
+        const nodeType = registry.get(node.type)!;
+        const input =
+          nodeType.inputs.length === 0
+            ? run.input
+            : Object.fromEntries(incoming(node.id).map((e) => [e.to.port, outputs.get(e.from.node)!]));
+        const settled = runNode(run, node, nodeType, input).then((output) => {
           outputs.set(node.id, output);
           inFlight.delete(node.id);
         });
@@ -73,18 +77,15 @@ export function createEngine(options: EngineOptions = {}) {
     return finished;
   }
 
-  /** Runs one node once the scheduler grants it a slot, persisting and announcing its progress. */
-  function runNode(run: RunRecord, node: WorkflowNode, portInputs: Record<string, JsonValue>): Promise<JsonValue> {
-    const nodeType = registry.get(node.type)!;
-    const input = nodeType.inputs.length === 0 ? run.input : portInputs;
+  /**
+   * Runs one node once the scheduler grants it a slot, persisting and announcing its progress.
+   * Until then its node record is `pending`.
+   */
+  async function runNode(run: RunRecord, node: WorkflowNode, nodeType: AnyNodeType, input: JsonValue): Promise<JsonValue> {
+    const pending: NodeRecord = { runId: run.id, nodeId: node.id, status: "pending", attempt: 0 };
+    await storage.saveNodeRecord(pending);
     return scheduler.run(node.type, async () => {
-      const record: NodeRecord = {
-        runId: run.id,
-        nodeId: node.id,
-        status: "running",
-        attempt: 1,
-        startedAt: now(),
-      };
+      const record: NodeRecord = { ...pending, status: "running", attempt: 1, startedAt: now() };
       await storage.saveNodeRecord(record);
       emit({ type: "node:start", runId: run.id, nodeId: node.id, attempt: 1 });
       const output = await nodeType.handler(input, nodeType.config.parse(node.config), {

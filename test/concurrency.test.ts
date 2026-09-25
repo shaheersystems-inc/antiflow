@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { createEngine, createInMemoryStorage, defineNodeType } from "../src/index.ts";
 import type { EngineEvent, WorkflowNode } from "../src/index.ts";
-import { edge } from "./fixtures.ts";
+import { edge, sleep } from "./fixtures.ts";
 
 /** Records how many handlers are in flight at once, overall and per node type. */
 function tracker() {
@@ -38,7 +38,7 @@ function slow(type: string, track: ReturnType<typeof tracker>, ms = 20) {
     display: { name: type },
     handler: async (_input, _config, context) => {
       track.enter(type);
-      await Bun.sleep(ms);
+      await sleep(ms);
       track.leave(type);
       return context.nodeId;
     },
@@ -65,12 +65,12 @@ const relay = defineNodeType({
   config: z.object({ ms: z.number() }),
   display: { name: "Relay" },
   handler: async (input, config) => {
-    await Bun.sleep(config.ms);
+    await sleep(config.ms);
     return input.in;
   },
 });
 
-const nodes = (type: string, count: number): WorkflowNode[] =>
+const independentNodes = (type: string, count: number): WorkflowNode[] =>
   Array.from({ length: count }, (_, i) => ({ id: `${type}-${i}`, type: `${type}@1`, config: {} }));
 
 describe("concurrent execution", () => {
@@ -79,7 +79,7 @@ describe("concurrent execution", () => {
     const engine = createEngine();
     engine.register(slow("test.slow", track));
 
-    const run = await engine.execute({ nodes: nodes("test.slow", 3), edges: [] }, null);
+    const run = await engine.execute({ nodes: independentNodes("test.slow", 3), edges: [] }, null);
 
     expect((await run.finished).status).toBe("completed");
     expect(track.maxTotal).toBe(3);
@@ -127,7 +127,7 @@ describe("concurrency caps", () => {
     const engine = createEngine({ concurrency: { global: 2 } });
     engine.register(slow("test.slow", track));
 
-    const run = await engine.execute({ nodes: nodes("test.slow", 5), edges: [] }, null);
+    const run = await engine.execute({ nodes: independentNodes("test.slow", 5), edges: [] }, null);
 
     expect((await run.finished).status).toBe("completed");
     expect(track.maxTotal).toBe(2);
@@ -139,8 +139,8 @@ describe("concurrency caps", () => {
     engine.register(slow("test.slow", track));
 
     const runs = await Promise.all([
-      engine.execute({ nodes: nodes("test.slow", 3), edges: [] }, null),
-      engine.execute({ nodes: nodes("test.slow", 3), edges: [] }, null),
+      engine.execute({ nodes: independentNodes("test.slow", 3), edges: [] }, null),
+      engine.execute({ nodes: independentNodes("test.slow", 3), edges: [] }, null),
     ]);
     const finished = await Promise.all(runs.map((r) => r.finished));
 
@@ -155,7 +155,7 @@ describe("concurrency caps", () => {
     engine.register(slow("test.free", track));
 
     const run = await engine.execute(
-      { nodes: [...nodes("test.limited", 3), ...nodes("test.free", 3)], edges: [] },
+      { nodes: [...independentNodes("test.limited", 3), ...independentNodes("test.free", 3)], edges: [] },
       null,
     );
 
@@ -172,13 +172,30 @@ describe("concurrency caps", () => {
 
     // Limited nodes are listed first, so they queue up ahead of the free ones.
     const run = await engine.execute(
-      { nodes: [...nodes("test.limited", 3), ...nodes("test.free", 1)], edges: [] },
+      { nodes: [...independentNodes("test.limited", 3), ...independentNodes("test.free", 1)], edges: [] },
       null,
     );
     await run.finished;
 
     expect(track.max("test.limited")).toBe(1);
     expect(track.maxTotal).toBe(2);
+  });
+
+  test("a node waiting for a slot is recorded as pending", async () => {
+    const storage = createInMemoryStorage();
+    const engine = createEngine({ storage, concurrency: { global: 1 } });
+    const track = tracker();
+    engine.register(slow("test.slow", track, 30));
+
+    const run = await engine.execute({ nodes: independentNodes("test.slow", 2), edges: [] }, null);
+    await sleep(10);
+    const statuses = (await storage.listNodeRecords(run.id)).map((r) => [r.nodeId, r.status]);
+    await run.finished;
+
+    expect(statuses).toEqual([
+      ["test.slow-0", "running"],
+      ["test.slow-1", "pending"],
+    ]);
   });
 
   test.each([0, -1, 1.5, Number.NaN])("rejects an invalid cap of %p", (cap) => {
