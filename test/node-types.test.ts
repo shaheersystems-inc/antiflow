@@ -146,7 +146,7 @@ describe("node type versions", () => {
 });
 
 describe("registration", () => {
-  test("rejects registering the same type@version twice, keeping the first registration", async () => {
+  test("rejects registering the same type@version twice, keeping the first registration", () => {
     const engine = createEngine();
     engine.register(versioned(1));
 
@@ -174,6 +174,7 @@ describe("registration", () => {
     ["a duplicate port name", { ...valid, outputs: ["out", "out"] }],
     ["missing display metadata", { ...valid, display: undefined }],
     ["display metadata without a name", { ...valid, display: { description: "no name" } }],
+    ["a non-string display field", { ...valid, display: { name: "Icon", icon: () => "svg" } }],
     ["a missing handler", { ...valid, handler: undefined }],
     ["a trigger-capable type with input ports", { ...valid, trigger: true, inputs: ["in"] }],
   ];
