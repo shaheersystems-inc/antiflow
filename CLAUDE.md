@@ -29,7 +29,9 @@ below rather than inventing structure ad hoc.
 - `src/scheduler.ts` — the `Scheduler` interface and the in-process scheduler (concurrency caps).
 - `src/validation.ts` — workflow definition validation (structured `ValidationIssue`s).
 - `src/types.ts` — workflow definition, node type, record, storage adapter and event types.
-- `src/storage/memory.ts` — the in-memory storage adapter.
+- `src/storage/memory.ts` — the in-memory storage adapter (the reference implementation).
+- `src/testing/` — `antiflow/testing` entry point: the storage adapter conformance suite.
+  Adapter rules are documented in `docs/storage-adapters.md`.
 - `test/` — tests through the public engine API only, using fake node types defined in
   the test. Domain vocabulary for names is in `CONTEXT.md`.
 

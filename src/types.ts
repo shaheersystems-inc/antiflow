@@ -140,13 +140,20 @@ export interface NodeRecord {
 }
 
 /**
- * Host-supplied persistence. Writes are whole-record upserts; no transactions are
- * required.
+ * Host-supplied persistence for run records and node records; see
+ * `docs/storage-adapters.md`. Every write is a whole-record upsert: it replaces any stored
+ * record with the same key, dropping fields the new record leaves out. No transactions or
+ * cross-record atomicity are required. Records hold only JSON values and must read back
+ * unchanged. Run the conformance suite from `antiflow/testing` against an implementation.
  */
 export interface StorageAdapter {
+  /** Stores `run`, replacing any run record with the same `id`. */
   saveRun(run: RunRecord): Promise<void>;
+  /** The run record with this id, or `undefined` if none was saved. */
   getRun(runId: string): Promise<RunRecord | undefined>;
+  /** Stores `record`, replacing any node record with the same `runId` and `nodeId`. */
   saveNodeRecord(record: NodeRecord): Promise<void>;
+  /** Every node record of the run, in any order; empty if there are none. */
   listNodeRecords(runId: string): Promise<NodeRecord[]>;
 }
 
