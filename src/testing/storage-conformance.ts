@@ -24,29 +24,29 @@ export function defineStorageAdapterTests(
   { describe, test }: TestRunner,
 ): void {
   describe(name, () => {
-    const it = (title: string, check: (adapter: StorageAdapter) => Promise<void>) =>
+    const adapterTest = (title: string, check: (adapter: StorageAdapter) => Promise<void>) =>
       test(title, async () => check(await createAdapter()));
 
     // ---- Run records ------------------------------------------------------
 
-    it("returns undefined for a run record that was never saved", async (adapter) => {
+    adapterTest("returns undefined for a run record that was never saved", async (adapter) => {
       assertEqual(await adapter.getRun("missing"), undefined, "getRun of an unknown run");
     });
 
-    it("reads back a saved run record unchanged", async (adapter) => {
+    adapterTest("reads back a saved run record unchanged", async (adapter) => {
       const run = sampleRun("run-1");
       await adapter.saveRun(run);
       assertEqual(await adapter.getRun("run-1"), run, "getRun after saveRun");
     });
 
-    it("replaces the whole run record on a later save, including removed fields", async (adapter) => {
-      await adapter.saveRun({ ...sampleRun("run-1"), status: "failed", completedAt: "2026-01-01T00:00:05.000Z" });
+    adapterTest("replaces the whole run record on a later save, including removed fields", async (adapter) => {
+      await adapter.saveRun({ ...sampleRun("run-1"), status: "failed", completedAt: at(5) });
       const resumed = sampleRun("run-1");
       await adapter.saveRun(resumed);
       assertEqual(await adapter.getRun("run-1"), resumed, "getRun after a second saveRun without completedAt");
     });
 
-    it("keeps run records apart by id", async (adapter) => {
+    adapterTest("keeps run records apart by id", async (adapter) => {
       const one = sampleRun("run-1");
       const two = { ...sampleRun("run-2"), input: "other input" };
       await adapter.saveRun(one);
@@ -55,7 +55,7 @@ export function defineStorageAdapterTests(
       assertEqual(await adapter.getRun("run-2"), two, "run-2");
     });
 
-    it("isn't affected by the caller mutating a run record after saving or reading it", async (adapter) => {
+    adapterTest("isn't affected by the caller mutating a run record after saving or reading it", async (adapter) => {
       const run = sampleRun("run-1");
       await adapter.saveRun(run);
       run.status = "cancelled";
@@ -67,24 +67,24 @@ export function defineStorageAdapterTests(
 
     // ---- Node records -----------------------------------------------------
 
-    it("lists no node records for a run without any", async (adapter) => {
+    adapterTest("lists no node records for a run without any", async (adapter) => {
       assertEqual(await adapter.listNodeRecords("missing"), [], "listNodeRecords of an unknown run");
     });
 
-    it("reads back saved node records unchanged", async (adapter) => {
+    adapterTest("reads back saved node records unchanged", async (adapter) => {
       const records = sampleNodeRecords("run-1");
       for (const record of records) await adapter.saveNodeRecord(record);
       assertEqual(byNode(await adapter.listNodeRecords("run-1")), byNode(records), "listNodeRecords after saves");
     });
 
-    it("replaces the whole node record for the same run and node on a later save", async (adapter) => {
+    adapterTest("replaces the whole node record for the same run and node on a later save", async (adapter) => {
       await adapter.saveNodeRecord({
         runId: "run-1",
         nodeId: "a",
         status: "running",
         attempt: 1,
         error: "failure 1",
-        startedAt: "2026-01-01T00:00:00.000Z",
+        startedAt: at(0),
       });
       const final: NodeRecord = {
         runId: "run-1",
@@ -92,14 +92,14 @@ export function defineStorageAdapterTests(
         status: "succeeded",
         attempt: 2,
         output: "ok",
-        startedAt: "2026-01-01T00:00:00.000Z",
-        completedAt: "2026-01-01T00:00:01.000Z",
+        startedAt: at(0),
+        completedAt: at(1),
       };
       await adapter.saveNodeRecord(final);
       assertEqual(await adapter.listNodeRecords("run-1"), [final], "listNodeRecords after the node record was replaced");
     });
 
-    it("lists only the node records of the given run", async (adapter) => {
+    adapterTest("lists only the node records of the given run", async (adapter) => {
       const one = sampleNodeRecords("run-1");
       const two = sampleNodeRecords("run-2").slice(0, 1);
       for (const record of [...one, ...two]) await adapter.saveNodeRecord(record);
@@ -107,7 +107,7 @@ export function defineStorageAdapterTests(
       assertEqual(byNode(await adapter.listNodeRecords("run-2")), byNode(two), "run-2's node records");
     });
 
-    it("isn't affected by the caller mutating a node record after saving or reading it", async (adapter) => {
+    adapterTest("isn't affected by the caller mutating a node record after saving or reading it", async (adapter) => {
       const [record] = sampleNodeRecords("run-1");
       await adapter.saveNodeRecord(record!);
       record!.status = "failed";
@@ -116,9 +116,29 @@ export function defineStorageAdapterTests(
       assertEqual(await adapter.listNodeRecords("run-1"), sampleNodeRecords("run-1").slice(0, 1), "after mutation");
     });
 
+    adapterTest("keeps every node record when many are saved at once", async (adapter) => {
+      const records = Array.from({ length: 25 }, (_, i): NodeRecord => ({
+        runId: "run-1",
+        nodeId: `node-${i}`,
+        status: "pending",
+        attempt: 0,
+      }));
+      await Promise.all(records.map((record) => adapter.saveNodeRecord(record)));
+      assertEqual(byNode(await adapter.listNodeRecords("run-1")), byNode(records), "node records saved concurrently");
+    });
+
+    adapterTest("doesn't confuse runs and nodes whose ids run together", async (adapter) => {
+      const one: NodeRecord = { runId: "r1", nodeId: "a:b", status: "succeeded", attempt: 1, output: "one" };
+      const two: NodeRecord = { runId: "r1:a", nodeId: "b", status: "succeeded", attempt: 1, output: "two" };
+      await adapter.saveNodeRecord(one);
+      await adapter.saveNodeRecord(two);
+      assertEqual(await adapter.listNodeRecords("r1"), [one], "run r1");
+      assertEqual(await adapter.listNodeRecords("r1:a"), [two], "run r1:a");
+    });
+
     // ---- Values -----------------------------------------------------------
 
-    it("round-trips every kind of JSON value in inputs and outputs", async (adapter) => {
+    adapterTest("round-trips every kind of JSON value in inputs and outputs", async (adapter) => {
       const values: JsonValue[] = [null, true, false, 0, -1.5, 1e21, "", "ünïcødé ✓ \n\t\"quoted\"", [], {}, awkwardJson];
       for (const [i, value] of values.entries()) {
         const run = { ...sampleRun(`run-${i}`), input: value };
@@ -130,7 +150,7 @@ export function defineStorageAdapterTests(
       }
     });
 
-    it("returns records that survive JSON serialization unchanged", async (adapter) => {
+    adapterTest("returns records that survive JSON serialization unchanged", async (adapter) => {
       await adapter.saveRun(sampleRun("run-1"));
       for (const record of sampleNodeRecords("run-1")) await adapter.saveNodeRecord(record);
       const run = await adapter.getRun("run-1");
@@ -140,6 +160,9 @@ export function defineStorageAdapterTests(
     });
   });
 }
+
+/** A timestamp `seconds` into the sample run. Timestamps are opaque strings to adapters. */
+const at = (seconds: number) => `2026-01-01T00:00:0${seconds}.000Z`;
 
 const awkwardJson: JsonValue = {
   nested: { deeply: [1, [2, [3, { four: null }]]] },
@@ -152,10 +175,16 @@ function sampleRun(id: string): RunRecord {
   return {
     id,
     status: "running",
-    startedAt: "2026-01-01T00:00:00.000Z",
+    startedAt: at(0),
     workflowSnapshot: {
       nodes: [
-        { id: "a", type: "test.append@1", config: { suffix: "!" }, timeoutMs: 500, retry: { maxAttempts: 3, backoff: "exponential", delayMs: 10 } },
+        {
+          id: "a",
+          type: "test.append@1",
+          config: { suffix: "!" },
+          timeoutMs: 500,
+          retry: { maxAttempts: 3, backoff: "exponential", delayMs: 10 },
+        },
         { id: "b", type: "test.fork@2", config: { cases: ["x", "y"], nested: { on: true } } },
       ],
       edges: [{ from: { node: "a", port: "out" }, to: { node: "b", port: "in" } }],
@@ -172,8 +201,8 @@ function sampleNodeRecords(runId: string): NodeRecord[] {
       status: "succeeded",
       attempt: 2,
       output: { text: "hello!" },
-      startedAt: "2026-01-01T00:00:00.000Z",
-      completedAt: "2026-01-01T00:00:01.000Z",
+      startedAt: at(0),
+      completedAt: at(1),
     },
     {
       runId,
@@ -181,10 +210,10 @@ function sampleNodeRecords(runId: string): NodeRecord[] {
       status: "succeeded",
       attempt: 1,
       outputsByPort: { x: [1, 2], y: null },
-      startedAt: "2026-01-01T00:00:01.000Z",
-      completedAt: "2026-01-01T00:00:02.000Z",
+      startedAt: at(1),
+      completedAt: at(2),
     },
-    { runId, nodeId: "c", status: "failed", attempt: 1, error: "boom", startedAt: "2026-01-01T00:00:02.000Z", completedAt: "2026-01-01T00:00:03.000Z" },
+    { runId, nodeId: "c", status: "failed", attempt: 1, error: "boom", startedAt: at(2), completedAt: at(3) },
     { runId, nodeId: "d", status: "pending", attempt: 0 },
   ];
 }
