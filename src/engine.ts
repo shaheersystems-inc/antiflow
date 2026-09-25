@@ -18,6 +18,7 @@ import type {
   RunStatus,
   StorageAdapter,
   WorkflowDefinition,
+  WorkflowNode,
 } from "./types.ts";
 import { now } from "./time.ts";
 import { validateWorkflow, WorkflowValidationError } from "./validation.ts";
@@ -76,6 +77,8 @@ export function createEngine(options: EngineOptions = {}) {
   };
   const runner: RunnerContext = { storage, scheduler, logger, emit };
   const activeRuns = new Map<string, ActiveRun>();
+  const isOptionalInput = (node: WorkflowNode, port: string) =>
+    registry.get(node.type)?.optionalInputs?.includes(port) ?? false;
   /** Resumes being prepared, by run id. */
   const resuming = new Map<string, Promise<unknown>>();
 
@@ -117,7 +120,7 @@ export function createEngine(options: EngineOptions = {}) {
     // settle, which may let it decide more.
     // After a cancel, nothing new is decided: only in-flight nodes are waited for.
     while (!cancel.aborted) {
-      const { ready, skipped } = plan(snapshot, states);
+      const { ready, skipped } = plan(snapshot, states, isOptionalInput);
       for (const nodeId of skipped) {
         states.set(nodeId, { status: "skipped" });
         await storage.saveNodeRecord({ runId: run.id, nodeId, status: "skipped", attempt: 0, completedAt: now() });
@@ -222,8 +225,8 @@ export function createEngine(options: EngineOptions = {}) {
      * be registered at once. Throws `NodeTypeRegistrationError` if that `type@version` is
      * already registered or the definition is malformed.
      */
-    register<Config, In extends string, Out extends string>(
-      nodeType: NodeTypeDefinition<Config, In, Out>,
+    register<Config, In extends string, Out extends string, Opt extends In>(
+      nodeType: NodeTypeDefinition<Config, In, Out, Opt>,
     ): void {
       registry.register(nodeType as AnyNodeType);
     },

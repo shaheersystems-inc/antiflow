@@ -18,37 +18,49 @@ export interface Plan {
 /**
  * Decides what happens next for every node that has no state yet. Pure: no I/O, no timing.
  * An input resolves when its source node succeeded and fired the edge's port. It will never
- * resolve when the source skipped, or succeeded without firing that port.
+ * resolve when the source skipped, or succeeded without firing that port. A node is skipped
+ * when a required input will never resolve, or when none of its wired inputs ever will; an
+ * optional input (per `isOptionalInput`) that never resolves is simply left out.
  */
-export function plan({ nodes, edges }: WorkflowDefinition, states: ReadonlyMap<string, NodeState>): Plan {
+export function plan(
+  { nodes, edges }: WorkflowDefinition,
+  states: ReadonlyMap<string, NodeState>,
+  isOptionalInput: (node: WorkflowNode, port: string) => boolean = () => false,
+): Plan {
   const incoming = new Map<string, Edge[]>(nodes.map((n) => [n.id, []]));
   for (const e of edges) incoming.get(e.to.node)?.push(e);
 
   const decided = new Map(states);
+  const resolutions = (node: WorkflowNode) =>
+    incoming.get(node.id)!.map((edge) => ({ edge, resolution: portResolution(decided.get(edge.from.node), edge.from.port) }));
+  const neverRuns = (node: WorkflowNode) => {
+    const all = resolutions(node);
+    const never = all.filter(({ resolution }) => resolution.kind === "never");
+    return never.some(({ edge }) => !isOptionalInput(node, edge.to.port)) || (all.length > 0 && never.length === all.length);
+  };
+
   const skipped: string[] = [];
   // Repeat until no new skips, so a skip reaches everything downstream of it.
   for (let changed = true; changed; ) {
     changed = false;
     for (const node of nodes) {
-      if (decided.has(node.id)) continue;
-      if (incoming.get(node.id)!.some((e) => portResolution(decided.get(e.from.node), e.from.port).kind === "never")) {
-        decided.set(node.id, { status: "skipped" });
-        skipped.push(node.id);
-        changed = true;
-      }
+      if (decided.has(node.id) || !neverRuns(node)) continue;
+      decided.set(node.id, { status: "skipped" });
+      skipped.push(node.id);
+      changed = true;
     }
   }
 
   const ready: Plan["ready"] = [];
   for (const node of nodes) {
     if (decided.has(node.id)) continue;
+    const all = resolutions(node);
+    if (all.some(({ resolution }) => resolution.kind === "not-yet")) continue;
     const inputs: Record<string, JsonValue> = {};
-    const allResolved = incoming.get(node.id)!.every((e) => {
-      const resolution = portResolution(decided.get(e.from.node), e.from.port);
-      if (resolution.kind === "resolved") inputs[e.to.port] = resolution.value;
-      return resolution.kind === "resolved";
-    });
-    if (allResolved) ready.push({ node, inputs });
+    for (const { edge, resolution } of all) {
+      if (resolution.kind === "resolved") inputs[edge.to.port] = resolution.value;
+    }
+    ready.push({ node, inputs });
   }
   const order = new Map(nodes.map((n, i) => [n.id, i]));
   return { ready, skipped: skipped.sort((a, b) => order.get(a)! - order.get(b)!) };

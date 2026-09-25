@@ -27,11 +27,12 @@ export interface NodeContext {
 
 /**
  * A node type with no input ports receives the run's trigger input; otherwise it
- * receives one value per input port, keyed by port name.
+ * receives one value per input port, keyed by port name. An optional input port is absent
+ * when it's unwired or its value never arrived.
  */
-export type NodeInput<In extends string> = [In] extends [never]
+export type NodeInput<In extends string, Opt extends In = never> = [In] extends [never]
   ? JsonValue
-  : { [P in In]: JsonValue };
+  : { [P in Exclude<In, Opt>]: JsonValue } & { [P in Opt]?: JsonValue };
 
 export interface DisplayMetadata {
   name: string;
@@ -44,10 +45,17 @@ export interface NodeTypeDefinition<
   Config = unknown,
   In extends string = string,
   Out extends string = string,
+  Opt extends In = never,
 > {
   type: string;
   version: number;
   inputs: readonly In[];
+  /**
+   * Input ports (among `inputs`) the node can run without. They needn't be wired, and one
+   * wired to a port that never fires doesn't skip the node. A node whose wired inputs all
+   * never resolve is still skipped. Every other input port is required.
+   */
+  optionalInputs?: readonly Opt[];
   outputs: readonly Out[];
   config: z.ZodType<Config>;
   display: DisplayMetadata;
@@ -62,11 +70,12 @@ export interface NodeTypeDefinition<
    * Execution is at-least-once: retries and resumes may call the handler again for the same
    * node of the same run, so it must be retry-safe (see the README).
    */
-  handler: (input: NodeInput<In>, config: Config, context: NodeContext) => Promise<JsonValue>;
+  handler: (input: NodeInput<In, Opt>, config: Config, context: NodeContext) => Promise<JsonValue>;
 }
 
 /** A node type with its config and port types erased, as held by the registry. */
-export interface AnyNodeType extends Omit<NodeTypeDefinition, "config" | "handler"> {
+export interface AnyNodeType extends Omit<NodeTypeDefinition, "config" | "handler" | "optionalInputs"> {
+  optionalInputs?: readonly string[];
   config: z.ZodType;
   handler: (input: any, config: any, context: NodeContext) => Promise<JsonValue>;
 }

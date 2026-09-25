@@ -28,6 +28,7 @@ describe("listNodeTypes", () => {
         type: "test.upper",
         version: 1,
         inputs: [],
+        optionalInputs: [],
         outputs: ["out"],
         trigger: false,
         display: { name: "Upper", description: "Upper-cases the trigger input" },
@@ -38,6 +39,7 @@ describe("listNodeTypes", () => {
         type: "test.append",
         version: 1,
         inputs: ["in"],
+        optionalInputs: [],
         outputs: ["out"],
         trigger: false,
         display: { name: "Append" },
@@ -177,6 +179,7 @@ describe("registration", () => {
     ["a non-string display field", { ...valid, display: { name: "Icon", icon: () => "svg" } }],
     ["a missing handler", { ...valid, handler: undefined }],
     ["a trigger-capable type with input ports", { ...valid, trigger: true, inputs: ["in"] }],
+    ["an optional input that isn't declared", { ...valid, inputs: ["in"], optionalInputs: ["other"] }],
   ];
   test.each(malformed)("rejects a node type definition with %s", (_label, definition) => {
     const engine = createEngine();

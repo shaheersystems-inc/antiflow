@@ -8,6 +8,8 @@ export interface NodeTypeInfo {
   type: string;
   version: number;
   inputs: string[];
+  /** The input ports among `inputs` that the node can run without. */
+  optionalInputs: string[];
   outputs: string[];
   /** Whether the node type is trigger-capable: it needs no inputs and can begin a run. */
   trigger: boolean;
@@ -68,6 +70,7 @@ function describe(id: string, nodeType: AnyNodeType, problems: string[]): NodeTy
     type: nodeType.type,
     version: nodeType.version,
     inputs: [...nodeType.inputs],
+    optionalInputs: [...(nodeType.optionalInputs ?? [])],
     outputs: [...nodeType.outputs],
     trigger: nodeType.trigger ?? false,
     display: JSON.parse(JSON.stringify({ name, description, category, icon })),
@@ -91,6 +94,13 @@ function definitionProblems(nodeType: AnyNodeType | undefined): string[] {
   }
   if (!Number.isInteger(version) || version < 1) problems.push("version must be an integer of at least 1");
   problems.push(...portProblems("inputs", inputs), ...portProblems("outputs", outputs));
+  const { optionalInputs } = nodeType;
+  if (optionalInputs !== undefined) {
+    const declared = Array.isArray(inputs) ? inputs : [];
+    if (!Array.isArray(optionalInputs) || optionalInputs.some((p) => !declared.includes(p))) {
+      problems.push("optionalInputs must list only declared input ports");
+    }
+  }
   // Duck-typed rather than `instanceof`, so schemas from another copy of zod are accepted.
   if (typeof config?.safeParse !== "function" || typeof config?.parse !== "function") {
     problems.push("config must be a Zod schema");

@@ -39,6 +39,9 @@ code, tests, issues, and docs. The reasoning behind the concepts lives in
 - **Config** — a node's static settings, validated against its node type's Zod schema.
   Contains no expressions/templates; dynamic values arrive through ports.
 - **Port** — a named input or output on a node. Each input port accepts at most one edge.
+- **Optional input port** — an input port a node type marks as optional: it needn't be wired,
+  and one that never resolves is left out of the node's input instead of skipping the node
+  (Merge uses these to rejoin branches). Every other input port is required.
 - **Edge** — a connection `nodeA:outPort → nodeB:inPort` carrying exactly one JSON value.
   _Avoid: "link", "wire", "connection"._
 - **Retry policy** — `{ maxAttempts, backoff, delayMs }`, `backoff` being `'fixed' |

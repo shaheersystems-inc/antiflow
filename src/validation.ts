@@ -116,10 +116,11 @@ export function validateWorkflow(
     if (!byPort) edgesByInput.set(to.node, (byPort = new Map()));
     byPort.set(to.port, [...(byPort.get(to.port) ?? []), edgeIndex]);
   });
-  // Every declared input port needs an edge, or its node could never receive that input.
+  // Every required input port needs an edge, or its node could never receive that input.
   for (const node of workflow.nodes) {
-    for (const port of registry.get(node.type)?.inputs ?? []) {
-      if (edgesByInput.get(node.id)?.has(port)) continue;
+    const nodeType = registry.get(node.type);
+    for (const port of nodeType?.inputs ?? []) {
+      if (edgesByInput.get(node.id)?.has(port) || nodeType?.optionalInputs?.includes(port)) continue;
       issues.push({
         code: "unconnected-input-port",
         nodeId: node.id,
