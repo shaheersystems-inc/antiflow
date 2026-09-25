@@ -115,6 +115,16 @@ weigh the same tradeoffs rather than re-litigating from scratch.
   progress is preserved. Node authors are expected to write idempotent-ish/retry-safe
   handlers (see execution guarantee, below).
 
+  Concretely: `retry: { maxAttempts, backoff = 'fixed', delayMs = 1000 }`. Fixed waits
+  `delayMs` between attempts; exponential waits `delayMs * 2^(n-1)` after failed attempt
+  `n`; a custom function receives `n` and returns the delay. Each attempt waits for its own
+  scheduler slot (a backoff doesn't hold one). A timeout aborts the attempt's signal and
+  fails the attempt at once, without waiting for a handler that ignores its signal. Between
+  attempts the node record stays `running` with the failed attempt's error; `node:start`
+  fires per attempt, `node:failed` only once attempts run out. A custom backoff function
+  isn't serializable, so the persisted snapshot omits it, and a run resumed from storage
+  uses the default backoff for that node.
+
 ## Execution
 
 - **Concurrency**: All nodes whose dependencies are satisfied execute concurrently (not
