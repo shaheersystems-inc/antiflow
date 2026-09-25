@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { createEngine, createInMemoryStorage, defineNodeType } from "../src/index.ts";
-import type { EngineEvent, JsonValue, WorkflowDefinition } from "../src/index.ts";
-import { append, edge, sleep, upper } from "./fixtures.ts";
+import { defineNodeType } from "../src/index.ts";
+import { append, edge, harness, join, node, relay, sleep, upper } from "./fixtures.ts";
 
 /** Fake node type that throws `config.message` after `config.ms`. */
 const boom = defineNodeType({
@@ -18,39 +17,14 @@ const boom = defineNodeType({
   },
 });
 
-/** Fake node type passing its `in` port through after `config.ms`. */
-const relay = defineNodeType({
-  type: "test.relay",
-  version: 1,
-  inputs: ["in"],
-  outputs: ["out"],
-  config: z.object({ ms: z.number() }),
-  display: { name: "Relay" },
-  handler: async (input, config) => {
-    await sleep(config.ms);
-    return input.in;
-  },
-});
-
 function setup() {
-  const storage = createInMemoryStorage();
-  const engine = createEngine({ storage });
+  const { engine, execute } = harness();
   engine.register(boom);
   engine.register(relay);
   engine.register(append);
   engine.register(upper);
-  const events: EngineEvent[] = [];
-  engine.subscribe((e) => events.push(e));
-  const execute = async (workflow: WorkflowDefinition, input: JsonValue = "go") => {
-    const run = await engine.execute(workflow, input);
-    const finished = await run.finished;
-    const records = Object.fromEntries((await storage.listNodeRecords(run.id)).map((r) => [r.nodeId, r]));
-    return { run: finished, records, events: events.filter((e) => e.runId === run.id) };
-  };
-  return { engine, storage, execute };
+  return { engine, execute };
 }
-
-const node = (id: string, type: string, config: unknown = {}) => ({ id, type, config });
 
 describe("node failure", () => {
   test("a throwing handler fails its node, recording the error, and fails the run", async () => {
@@ -141,21 +115,11 @@ describe("branch isolation", () => {
 
   test("a failure on one side of a join halts the join but not the other side", async () => {
     const { engine, execute } = setup();
-    engine.register(
-      defineNodeType({
-        type: "test.join",
-        version: 1,
-        inputs: ["left", "right"],
-        outputs: ["out"],
-        config: z.object({}),
-        display: { name: "Join" },
-        handler: async (input) => [input.left, input.right],
-      }),
-    );
+    engine.register(join);
 
     const { run, records } = await execute({
       nodes: [
-        node("b", "test.boom@1", { message: "kaput", ms: 5 }),
+        node("b", "test.boom@1", { message: "kaput" }),
         node("u", "test.upper@1"),
         node("slow", "test.relay@1", { ms: 20 }),
         node("j", "test.join@1"),
@@ -166,5 +130,32 @@ describe("branch isolation", () => {
     expect(records.slow).toMatchObject({ status: "succeeded" });
     expect(records.j).toMatchObject({ status: "pending" });
     expect(run.status).toBe("failed");
+  });
+});
+
+describe("failure next to a skip", () => {
+  test("a node with one input from a failed node and one from an unfired port is skipped", async () => {
+    const { engine, execute } = setup();
+    engine.register(join);
+    engine.register(
+      defineNodeType({
+        type: "test.never",
+        version: 1,
+        inputs: [],
+        outputs: ["yes", "no"],
+        config: z.object({}),
+        display: { name: "Never" },
+        handler: async () => ({}),
+      }),
+    );
+
+    // Even if b were retried and succeeded, j could never run: its right input never fires.
+    const { records } = await execute({
+      nodes: [node("b", "test.boom@1", { message: "kaput" }), node("n", "test.never@1"), node("j", "test.join@1")],
+      edges: [edge("b", "j", { in: "left" }), edge("n", "j", { out: "yes", in: "right" })],
+    });
+
+    expect(records.b).toMatchObject({ status: "failed" });
+    expect(records.j).toMatchObject({ status: "skipped" });
   });
 });

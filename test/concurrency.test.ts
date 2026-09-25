@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { createEngine, createInMemoryStorage, defineNodeType } from "../src/index.ts";
 import type { EngineEvent, WorkflowNode } from "../src/index.ts";
-import { edge, sleep } from "./fixtures.ts";
+import { edge, join, relay, sleep } from "./fixtures.ts";
 
 /** Records how many handlers are in flight at once, overall and per node type. */
 function tracker() {
@@ -44,31 +44,6 @@ function slow(type: string, track: ReturnType<typeof tracker>, ms = 20) {
     },
   });
 }
-
-/** Fake node type joining two inputs into `[left, right]`. */
-const join = defineNodeType({
-  type: "test.join",
-  version: 1,
-  inputs: ["left", "right"],
-  outputs: ["out"],
-  config: z.object({}),
-  display: { name: "Join" },
-  handler: async (input) => [input.left, input.right],
-});
-
-/** Fake node type passing its `in` port through after `ms`. */
-const relay = defineNodeType({
-  type: "test.relay",
-  version: 1,
-  inputs: ["in"],
-  outputs: ["out"],
-  config: z.object({ ms: z.number() }),
-  display: { name: "Relay" },
-  handler: async (input, config) => {
-    await sleep(config.ms);
-    return input.in;
-  },
-});
 
 const independentNodes = (type: string, count: number): WorkflowNode[] =>
   Array.from({ length: count }, (_, i) => ({ id: `${type}-${i}`, type: `${type}@1`, config: {} }));

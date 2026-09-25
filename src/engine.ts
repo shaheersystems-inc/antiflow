@@ -49,9 +49,9 @@ export function createEngine(options: EngineOptions = {}) {
     const states = new Map<string, NodeState>();
     const inFlight = new Map<string, Promise<void>>();
     // Every node starts out pending; nodes downstream of a failure stay that way.
-    for (const { id } of snapshot.nodes) {
-      await storage.saveNodeRecord({ runId: run.id, nodeId: id, status: "pending", attempt: 0 });
-    }
+    await Promise.all(
+      snapshot.nodes.map(({ id }) => storage.saveNodeRecord({ runId: run.id, nodeId: id, status: "pending", attempt: 0 })),
+    );
 
     // Skip or start every node the planner can decide, then wait for an in-flight node to
     // settle, which may let it decide more.
@@ -90,27 +90,26 @@ export function createEngine(options: EngineOptions = {}) {
    */
   function runNode(run: RunRecord, node: WorkflowNode, nodeType: AnyNodeType, input: JsonValue): Promise<NodeState> {
     return scheduler.run(node.type, async () => {
-      const record: NodeRecord = { runId: run.id, nodeId: node.id, status: "running", attempt: 1, startedAt: now() };
+      const attempt = { runId: run.id, nodeId: node.id, attempt: 1 };
+      const record: NodeRecord = { ...attempt, status: "running", startedAt: now() };
       await storage.saveNodeRecord(record);
-      emit({ type: "node:start", runId: run.id, nodeId: node.id, attempt: 1 });
+      emit({ type: "node:start", ...attempt });
       let result: NodeResult;
       try {
         const returned = await nodeType.handler(input, nodeType.config.parse(node.config), {
-          runId: run.id,
-          nodeId: node.id,
-          attempt: 1,
-          logger: tagLogger(logger, { runId: run.id, nodeId: node.id, attempt: 1 }),
+          ...attempt,
+          logger: tagLogger(logger, attempt),
           signal: new AbortController().signal,
         });
         result = normalizeResult(nodeType, returned);
       } catch (e) {
         const error = e instanceof Error ? e.message : String(e);
         await storage.saveNodeRecord({ ...record, status: "failed", error, completedAt: now() });
-        emit({ type: "node:failed", runId: run.id, nodeId: node.id, attempt: 1, error });
+        emit({ type: "node:failed", ...attempt, error });
         return { status: "failed" };
       }
       await storage.saveNodeRecord({ ...record, status: "succeeded", ...result, completedAt: now() });
-      emit({ type: "node:succeeded", runId: run.id, nodeId: node.id, attempt: 1 });
+      emit({ type: "node:succeeded", ...attempt });
       return { status: "succeeded", ...result };
     });
   }

@@ -61,7 +61,8 @@ code, tests, issues, and docs. The reasoning behind the concepts lives in
   to an unfired port) is marked `skipped` without running; this propagates downstream.
   A skip is not a failure.
 - **Branch isolation** — a failed node halts only nodes downstream of it; independent
-  branches continue.
+  branches continue. Halted nodes keep their `pending` node record (they may still run if the
+  failed node is retried), unlike skipped nodes, which can never run.
 - **Resume** — continuing a run from persisted state against its snapshot, including
   retrying a failed node. Refused if a node type id in the snapshot isn't registered.
 - **Cancel** — stop scheduling new nodes, abort in-flight attempts via their signal, and
