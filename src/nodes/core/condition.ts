@@ -21,7 +21,12 @@ const unary: readonly Operator[] = ["exists", "truthy"];
 /** A test of one value: `operator`, and for comparisons the `value` to compare against. */
 export const condition = z
   .object({
-    operator: z.enum(operators),
+    operator: z
+      .enum(operators)
+      .describe(
+        "equals/notEquals compare JSON structurally; greater/less compare two numbers or two strings (otherwise false); " +
+          "contains checks a substring or an array element; exists means neither missing nor null; truthy uses JavaScript truthiness (0, \"\", false and null are falsy)",
+      ),
     value: z.json().optional().describe("What to compare against; not used by exists and truthy"),
   })
   .refine((c) => c.value !== undefined || unary.includes(c.operator), {

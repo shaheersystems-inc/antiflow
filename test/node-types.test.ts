@@ -180,6 +180,7 @@ describe("registration", () => {
     ["a missing handler", { ...valid, handler: undefined }],
     ["a trigger-capable type with input ports", { ...valid, trigger: true, inputs: ["in"] }],
     ["an optional input that isn't declared", { ...valid, inputs: ["in"], optionalInputs: ["other"] }],
+    ["a repeated optional input", { ...valid, inputs: ["in"], optionalInputs: ["in", "in"] }],
   ];
   test.each(malformed)("rejects a node type definition with %s", (_label, definition) => {
     const engine = createEngine();

@@ -1,6 +1,6 @@
 import { plan } from "./planner.ts";
 import type { NodeState } from "./planner.ts";
-import { NodeTypeRegistry } from "./registry.ts";
+import { isOptionalInput, NodeTypeRegistry } from "./registry.ts";
 import type { NodeTypeInfo } from "./registry.ts";
 import { runNode } from "./runner.ts";
 import type { RunnerContext } from "./runner.ts";
@@ -77,8 +77,7 @@ export function createEngine(options: EngineOptions = {}) {
   };
   const runner: RunnerContext = { storage, scheduler, logger, emit };
   const activeRuns = new Map<string, ActiveRun>();
-  const isOptionalInput = (node: WorkflowNode, port: string) =>
-    registry.get(node.type)?.optionalInputs?.includes(port) ?? false;
+  const nodeHasOptionalInput = (node: WorkflowNode, port: string) => isOptionalInput(registry.get(node.type), port);
   /** Resumes being prepared, by run id. */
   const resuming = new Map<string, Promise<unknown>>();
 
@@ -120,7 +119,7 @@ export function createEngine(options: EngineOptions = {}) {
     // settle, which may let it decide more.
     // After a cancel, nothing new is decided: only in-flight nodes are waited for.
     while (!cancel.aborted) {
-      const { ready, skipped } = plan(snapshot, states, isOptionalInput);
+      const { ready, skipped } = plan(snapshot, states, nodeHasOptionalInput);
       for (const nodeId of skipped) {
         states.set(nodeId, { status: "skipped" });
         await storage.saveNodeRecord({ runId: run.id, nodeId, status: "skipped", attempt: 0, completedAt: now() });

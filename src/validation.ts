@@ -1,3 +1,4 @@
+import { isOptionalInput } from "./registry.ts";
 import type { NodeTypeRegistry } from "./registry.ts";
 import type { WorkflowDefinition, WorkflowNode } from "./types.ts";
 
@@ -120,7 +121,7 @@ export function validateWorkflow(
   for (const node of workflow.nodes) {
     const nodeType = registry.get(node.type);
     for (const port of nodeType?.inputs ?? []) {
-      if (edgesByInput.get(node.id)?.has(port) || nodeType?.optionalInputs?.includes(port)) continue;
+      if (edgesByInput.get(node.id)?.has(port) || isOptionalInput(nodeType, port)) continue;
       issues.push({
         code: "unconnected-input-port",
         nodeId: node.id,

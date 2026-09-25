@@ -60,9 +60,10 @@ weigh the same tradeoffs rather than re-litigating from scratch.
   input port must be wired, and validation rejects a workflow with an unconnected one. An
   optional input port may be left unwired. If it never resolves, it's left out of the input
   rather than skipping the node. A node is still skipped if none of its wired inputs ever
-  resolve. This is what lets the core Merge node rejoin the branches of an If or Switch. A multi-port handler fires exactly the ports present in
-  its returned map (a port whose value is `undefined` counts as not fired); a single-output
-  handler always fires its port.
+  resolve. This is what lets the core Merge node rejoin the branches of an If or Switch.
+
+  A multi-port handler fires exactly the ports present in its returned map (a port whose
+  value is `undefined` counts as not fired); a single-output handler always fires its port.
 
 ## Node contract
 

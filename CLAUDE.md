@@ -63,7 +63,9 @@ HTTP/scheduler service, but rich enough in its type/metadata surface to be plugg
   most one incoming edge (use an explicit Merge node to combine branches).
 - A single JSON value flows per edge — no n8n-style per-item fan-out/pairing semantics.
 - A node is marked `skipped` (not run, not errored) if a required input port never
-  resolves (e.g. wired to the untaken branch of an If/Switch); skip propagates downstream.
+  resolves (e.g. wired to the untaken branch of an If/Switch), or if none of its wired
+  inputs ever resolve; skip propagates downstream. Input ports a node type lists in
+  `optionalInputs` (e.g. Merge's) may stay unwired or unresolved without skipping it.
 
 ## Node contract
 
