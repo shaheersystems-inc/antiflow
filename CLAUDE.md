@@ -4,10 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Early implementation. The tracer bullet (#2) works: register node types, execute a linear
-workflow, persist run/node records via the in-memory storage adapter, emit live events.
-Remaining v1 work is tracked as GitHub issues #3–#13 (spec: #1). Follow the architecture
-below rather than inventing structure ad hoc.
+The v1 spec (#1) is implemented across issues #2–#13. This covers:
+- validation and the node type catalog
+- concurrent execution with caps
+- branching and skip propagation
+- failure isolation, timeouts and retries
+- cancellation, snapshot and resume
+- the storage conformance suite
+- the core nodes
+- credentials and redaction
+
+Follow the architecture below rather than inventing structure ad hoc.
 
 ## Commands
 
