@@ -55,8 +55,9 @@ export interface NodeTypeDefinition<
   trigger?: boolean;
   /**
    * Returns a bare value when the node type declares one output port. With several output
-   * ports it returns an object holding only the ports it fired; the others are not fired, so
-   * nodes wired to them are skipped. Returning an undeclared port fails the node.
+   * ports it returns an object holding only the ports it fired; the others (and any set to
+   * `undefined`) are not fired, so nodes wired to them are skipped. Returning an undeclared
+   * port fails the node. A single-output node always fires its port.
    */
   handler: (input: NodeInput<In>, config: Config, context: NodeContext) => Promise<JsonValue>;
 }

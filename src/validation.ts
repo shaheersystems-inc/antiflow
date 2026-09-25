@@ -20,6 +20,7 @@ export type ValidationIssue =
       direction: "input" | "output";
       message: string;
     }
+  | { code: "unconnected-input-port"; nodeId: string; port: string; message: string }
   | { code: "multiple-input-edges"; nodeId: string; port: string; edgeIndexes: number[]; message: string }
   | { code: "cycle"; nodeIds: string[]; message: string };
 
@@ -112,6 +113,18 @@ export function validateWorkflow(
     if (!byPort) edgesByInput.set(to.node, (byPort = new Map()));
     byPort.set(to.port, [...(byPort.get(to.port) ?? []), edgeIndex]);
   });
+  // Every declared input port needs an edge, or its node could never receive that input.
+  for (const node of workflow.nodes) {
+    for (const port of registry.get(node.type)?.inputs ?? []) {
+      if (edgesByInput.get(node.id)?.has(port)) continue;
+      issues.push({
+        code: "unconnected-input-port",
+        nodeId: node.id,
+        port,
+        message: `Input port "${port}" on node "${node.id}" has no incoming edge`,
+      });
+    }
+  }
   for (const [nodeId, byPort] of edgesByInput) {
     for (const [port, edgeIndexes] of byPort) {
       if (edgeIndexes.length < 2) continue;

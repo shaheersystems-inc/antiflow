@@ -56,6 +56,11 @@ weigh the same tradeoffs rather than re-litigating from scratch.
   _Why: matches n8n/Make branch semantics; prevents handlers from ever silently running
   with partial/garbage input._
 
+  Every declared input port is required and must be wired: validation rejects a workflow
+  with an unconnected input port. A multi-port handler fires exactly the ports present in
+  its returned map (a port whose value is `undefined` counts as not fired); a single-output
+  handler always fires its port.
+
 ## Node contract
 
 - **Registration model**: Nodes are pre-registered, typed handlers only. No inline/
