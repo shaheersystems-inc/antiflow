@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { createEngine, createInMemoryStorage, defineNodeType } from "../src/index.ts";
-import type { EngineEvent, JsonValue, WorkflowDefinition } from "../src/index.ts";
-import { append, edge, upper } from "./fixtures.ts";
+import { defineNodeType } from "../src/index.ts";
+import type { JsonValue } from "../src/index.ts";
+import { append, edge, harness, join, node, upper } from "./fixtures.ts";
 
 /** Fake multi-port node type: fires the ports named in its config with its trigger input. */
 const fire = defineNodeType({
@@ -16,36 +16,14 @@ const fire = defineNodeType({
     Object.fromEntries(config.ports.map((port) => [port, input])) as Record<string, JsonValue>,
 });
 
-/** Fake node type joining two inputs into `[left, right]`. */
-const join = defineNodeType({
-  type: "test.join",
-  version: 1,
-  inputs: ["left", "right"],
-  outputs: ["out"],
-  config: z.object({}),
-  display: { name: "Join" },
-  handler: async (input) => [input.left, input.right],
-});
-
 function setup() {
-  const storage = createInMemoryStorage();
-  const engine = createEngine({ storage });
+  const { engine, execute } = harness();
   engine.register(fire);
   engine.register(append);
   engine.register(join);
   engine.register(upper);
-  const events: EngineEvent[] = [];
-  engine.subscribe((e) => events.push(e));
-  const execute = async (workflow: WorkflowDefinition, input: JsonValue = "go") => {
-    const run = await engine.execute(workflow, input);
-    const finished = await run.finished;
-    const records = Object.fromEntries((await storage.listNodeRecords(run.id)).map((r) => [r.nodeId, r]));
-    return { run: finished, records, events: events.filter((e) => e.runId === run.id) };
-  };
   return { engine, execute };
 }
-
-const node = (id: string, type: string, config: unknown = {}) => ({ id, type, config });
 
 describe("multi-port outputs", () => {
   test("persists the fired ports as outputsByPort and runs their downstream with the fired value", async () => {
