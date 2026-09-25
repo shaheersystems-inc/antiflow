@@ -35,6 +35,15 @@ export interface RunHandle {
   finished: Promise<RunRecord>;
 }
 
+/** A run in progress in this engine. */
+interface ActiveRun {
+  run: RunRecord;
+  /** Aborted by `cancel()`. */
+  cancel: AbortController;
+  /** The write marking the run `cancelling`, once cancelled. */
+  cancelling?: Promise<void>;
+}
+
 export function createEngine(options: EngineOptions = {}) {
   const storage = options.storage ?? createInMemoryStorage();
   const logger = options.logger ?? silentLogger;
@@ -46,9 +55,25 @@ export function createEngine(options: EngineOptions = {}) {
     for (const listener of listeners) listener(event);
   };
   const runner: RunnerContext = { storage, scheduler, logger, emit };
+  const activeRuns = new Map<string, ActiveRun>();
 
   /** Runs `run` to its end against `snapshot`, which may hold values storage can't (backoff functions). */
   async function runWorkflow(run: RunRecord, snapshot: WorkflowDefinition): Promise<RunRecord> {
+    const active: ActiveRun = { run, cancel: new AbortController() };
+    activeRuns.set(run.id, active);
+    try {
+      return await driveRun(run, snapshot, active);
+    } finally {
+      activeRuns.delete(run.id);
+    }
+  }
+
+  async function driveRun(
+    run: RunRecord,
+    snapshot: WorkflowDefinition,
+    active: ActiveRun,
+  ): Promise<RunRecord> {
+    const cancel = active.cancel.signal;
     const states = new Map<string, NodeState>();
     const inFlight = new Map<string, Promise<void>>();
     // Every node starts out pending; nodes downstream of a failure stay that way.
@@ -58,7 +83,8 @@ export function createEngine(options: EngineOptions = {}) {
 
     // Skip or start every node the planner can decide, then wait for an in-flight node to
     // settle, which may let it decide more.
-    while (true) {
+    // After a cancel, nothing new is decided: only in-flight nodes are waited for.
+    while (!cancel.aborted) {
       const { ready, skipped } = plan(snapshot, states);
       for (const nodeId of skipped) {
         states.set(nodeId, { status: "skipped" });
@@ -66,10 +92,11 @@ export function createEngine(options: EngineOptions = {}) {
         emit({ type: "node:skipped", runId: run.id, nodeId });
       }
       for (const { node, inputs } of ready) {
+        if (cancel.aborted) break;
         states.set(node.id, { status: "running" });
         const nodeType = registry.get(node.type)!;
         const input = nodeType.inputs.length === 0 ? run.input : inputs;
-        const settled = runNode(runner, run.id, node, nodeType, input).then((state) => {
+        const settled = runNode(runner, run.id, node, nodeType, input, cancel).then((state) => {
           states.set(node.id, state);
           inFlight.delete(node.id);
         });
@@ -79,10 +106,27 @@ export function createEngine(options: EngineOptions = {}) {
       await Promise.race(inFlight.values());
     }
 
+    await Promise.all(inFlight.values());
+
+    if (cancel.aborted) {
+      // Nodes never dispatched are left unrun by the cancel.
+      const unrun = snapshot.nodes.filter((n) => !states.has(n.id));
+      await Promise.all(
+        unrun.map(({ id }) =>
+          storage.saveNodeRecord({ runId: run.id, nodeId: id, status: "cancelled", attempt: 0, completedAt: now() }),
+        ),
+      );
+      await active.cancelling;
+      return finish(run, "cancelled");
+    }
     const failed = [...states.values()].some((s) => s.status === "failed");
-    const finished: RunRecord = { ...run, status: failed ? "failed" : "completed", completedAt: now() };
+    return finish(run, failed ? "failed" : "completed");
+  }
+
+  async function finish(run: RunRecord, status: "completed" | "failed" | "cancelled"): Promise<RunRecord> {
+    const finished: RunRecord = { ...run, status, completedAt: now() };
     await storage.saveRun(finished);
-    emit({ type: failed ? "run:failed" : "run:completed", runId: run.id });
+    emit({ type: `run:${status}`, runId: run.id });
     return finished;
   }
 
@@ -102,6 +146,25 @@ export function createEngine(options: EngineOptions = {}) {
       nodeType: NodeTypeDefinition<Config, In, Out>,
     ): void {
       registry.register(nodeType as AnyNodeType);
+    },
+
+    /**
+     * Cancels a run of this engine: no new node starts, in-flight attempts see their signal
+     * abort, and the run goes `cancelling`, then `cancelled` once they have settled (see
+     * `RunHandle.finished`). Resolves once the run is recorded as `cancelling`. Does nothing
+     * for a run that has already ended; rejects for a run this engine doesn't know.
+     */
+    async cancel(runId: string): Promise<void> {
+      const active = activeRuns.get(runId);
+      if (!active) {
+        const run = await storage.getRun(runId);
+        if (run && run.status !== "running" && run.status !== "cancelling") return;
+        throw new Error(`Run "${runId}" is not running in this engine`);
+      }
+      if (active.cancelling) return active.cancelling;
+      active.cancel.abort();
+      active.cancelling = storage.saveRun({ ...active.run, status: "cancelling" });
+      return active.cancelling;
     },
 
     /** Every registered node type, in registration order, as plain JSON for a UI's node palette. */

@@ -11,8 +11,12 @@ export interface ConcurrencyOptions {
  * leaves room for a queue-backed scheduler that runs them elsewhere.
  */
 export interface Scheduler {
-  /** Runs `task` once a slot for `nodeTypeId` is free, resolving or rejecting with its result. */
-  run<T>(nodeTypeId: string, task: () => Promise<T>): Promise<T>;
+  /**
+   * Runs `task` once a slot for `nodeTypeId` is free, resolving or rejecting with its result.
+   * If `signal` aborts while the task is still waiting, it never starts and this rejects with
+   * the signal's reason.
+   */
+  run<T>(nodeTypeId: string, task: () => Promise<T>, signal?: AbortSignal): Promise<T>;
 }
 
 /**
@@ -45,11 +49,17 @@ export function createInProcessScheduler(options: ConcurrencyOptions = {}): Sche
   };
 
   return {
-    run(nodeTypeId, task) {
+    run(nodeTypeId, task, signal) {
       return new Promise((resolve, reject) => {
-        waiting.push({
+        if (signal?.aborted) return reject(signal.reason);
+        const withdraw = () => {
+          waiting.splice(waiting.indexOf(entry), 1);
+          reject(signal!.reason);
+        };
+        const entry = {
           nodeTypeId,
           start: () => {
+            signal?.removeEventListener("abort", withdraw);
             runningTotal++;
             running.set(nodeTypeId, (running.get(nodeTypeId) ?? 0) + 1);
             task()
@@ -60,7 +70,9 @@ export function createInProcessScheduler(options: ConcurrencyOptions = {}): Sche
                 dispatch();
               });
           },
-        });
+        };
+        waiting.push(entry);
+        signal?.addEventListener("abort", withdraw, { once: true });
         dispatch();
       });
     },
