@@ -27,3 +27,6 @@ export const append = defineNodeType({
 export function edge(from: string, to: string, ports: { out?: string; in?: string } = {}) {
   return { from: { node: from, port: ports.out ?? "out" }, to: { node: to, port: ports.in ?? "in" } };
 }
+
+/** Resolves after `ms` milliseconds. */
+export const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
