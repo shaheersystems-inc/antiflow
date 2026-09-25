@@ -148,6 +148,11 @@ weigh the same tradeoffs rather than re-litigating from scratch.
   resumable state so the host can retry just that node later without re-running the whole
   graph.
 
+  Concretely: every node gets a `pending` node record when the run starts. A thrown error
+  (or an invalid handler result) marks the node `failed` with the error message; its
+  downstream nodes stay `pending` (halted, not skipped). Once everything runnable has
+  finished, the run ends `failed` and `run:failed` is emitted.
+
 - **Execution guarantee**: At-least-once, not exactly-once — documented as an explicit
   contract for node authors. A crash between a handler completing and its result being
   persisted means resume may re-run that node.

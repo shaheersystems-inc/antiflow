@@ -179,7 +179,7 @@ describe("invalid handler results", () => {
 
     expect(records.f).toMatchObject({ status: "failed", error: expect.stringContaining("bogus") });
     expect(records.f).not.toHaveProperty("outputsByPort");
-    expect(records.a).toBeUndefined();
+    expect(records.a).toMatchObject({ status: "pending" });
     expect(events).toContainEqual({ type: "node:failed", runId: run.id, nodeId: "f", attempt: 1, error: expect.any(String) });
     expect(run.status).toBe("failed");
   });
