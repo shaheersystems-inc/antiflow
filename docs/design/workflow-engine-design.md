@@ -81,6 +81,12 @@ weigh the same tradeoffs rather than re-litigating from scratch.
   _Why: this is the main lever for "rich enough to plug into a UI" — without it, any UI
   has to hand-maintain a parallel catalog of what each node needs._
 
+  `listNodeTypes()` returns plain JSON per node type: node type id, type, version, ports,
+  trigger flag, display metadata, and the config schema converted to JSON Schema (the
+  Zod schema's input side, so defaulted fields are optional) — a form a UI can render
+  without depending on Zod. Registration rejects a duplicate `type@version` and any
+  malformed definition (listing every problem), so mistakes surface at startup.
+
 - **Node type versioning**: Node type identity includes a version (e.g. `"core.if@1"`).
   A workflow snapshot (see below) records which version each node was authored against.
   On resume, the engine refuses to proceed if the currently-registered handler version for
@@ -169,7 +175,9 @@ weigh the same tradeoffs rather than re-litigating from scratch.
 
 - Triggers (webhook, cron, manual) are represented only as **node metadata** — a node type
   can declare itself trigger-capable / requires-no-inputs — purely so a UI can render "this
-  is where the run begins" as part of a complete graph. The library itself never implements
+  is where the run begins" as part of a complete graph. Concretely, a node type sets
+  `trigger: true`; registration rejects a trigger-capable node type that declares input
+  ports. The library itself never implements
   a webhook server or a cron scheduler. The runtime surface is just
   `engine.execute(workflowDef, triggerInput)`; the host owns deciding *when* to call it.
   _Why: keeps the "pure embeddable library" boundary intact while still giving a UI enough
