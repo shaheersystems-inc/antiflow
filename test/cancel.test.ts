@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { defineNodeType } from "../src/index.ts";
-import type { EngineEvent, EngineOptions, NodeRecord } from "../src/index.ts";
+import { createInMemoryStorage, defineNodeType } from "../src/index.ts";
+import type { EngineEvent, EngineOptions, NodeRecord, StorageAdapter } from "../src/index.ts";
 import { edge, harness, node, relay, sleep } from "./fixtures.ts";
 
 /**
@@ -11,6 +11,10 @@ import { edge, harness, node, relay, sleep } from "./fixtures.ts";
 function worker() {
   const aborted: string[] = [];
   const started: string[] = [];
+  const waiters = new Map<string, () => void>();
+  /** Resolves once the handler for `nodeId` has started. */
+  const untilStarted = (nodeId: string) =>
+    started.includes(nodeId) ? Promise.resolve() : new Promise<void>((resolve) => waiters.set(nodeId, resolve));
   const nodeType = defineNodeType({
     type: "test.work",
     version: 1,
@@ -20,6 +24,7 @@ function worker() {
     display: { name: "Work" },
     handler: async (_input, config, { signal, nodeId }) => {
       started.push(nodeId);
+      waiters.get(nodeId)?.();
       await new Promise<void>((resolve) => {
         const timer = setTimeout(resolve, config.ms);
         signal.addEventListener("abort", () => {
@@ -33,7 +38,7 @@ function worker() {
       return nodeId;
     },
   });
-  return { nodeType, aborted, started };
+  return { nodeType, aborted, started, untilStarted };
 }
 
 function setup(options: EngineOptions = {}) {
@@ -51,15 +56,15 @@ function setup(options: EngineOptions = {}) {
 describe("cancel", () => {
   test("sets the run to cancelling at once, and to cancelled once in-flight handlers settle", async () => {
     const { engine, storage, work, events } = setup();
-    const run = await engine.execute({ nodes: [node("w", "test.work@1", { ms: 1000, settleMs: 30 })], edges: [] }, null);
-    await sleep(5);
+    const run = await engine.execute({ nodes: [node("w", "test.work@1", { ms: 1000, settleMs: 60 })], edges: [] }, null);
+    await work.untilStarted("w");
 
     const cancelledAt = performance.now();
     await engine.cancel(run.id);
     expect((await storage.getRun(run.id))?.status).toBe("cancelling");
 
     const finished = await run.finished;
-    expect(performance.now() - cancelledAt).toBeGreaterThanOrEqual(25);
+    expect(performance.now() - cancelledAt).toBeGreaterThanOrEqual(50);
     expect(finished.status).toBe("cancelled");
     expect(finished.completedAt).toBeDefined();
     expect((await storage.getRun(run.id))?.status).toBe("cancelled");
@@ -70,10 +75,10 @@ describe("cancel", () => {
   test("waits for an in-flight handler that ignores its signal, whatever its outcome", async () => {
     const { engine, work, events, records } = setup();
     const run = await engine.execute(
-      { nodes: [node("w", "test.work@1", { ms: 40, ignoreAbort: true })], edges: [] },
+      { nodes: [node("w", "test.work@1", { ms: 150, ignoreAbort: true })], edges: [] },
       null,
     );
-    await sleep(5);
+    await work.untilStarted("w");
 
     await engine.cancel(run.id);
     const finished = await run.finished;
@@ -90,12 +95,12 @@ describe("cancel", () => {
     // a → b → c; b and c never get to run.
     const run = await engine.execute(
       {
-        nodes: [node("a", "test.work@1", { ms: 30, ignoreAbort: true }), node("b", "test.relay@1", { ms: 0 }), node("c", "test.relay@1", { ms: 0 })],
+        nodes: [node("a", "test.work@1", { ms: 150, ignoreAbort: true }), node("b", "test.relay@1", { ms: 0 }), node("c", "test.relay@1", { ms: 0 })],
         edges: [edge("a", "b"), edge("b", "c")],
       },
       null,
     );
-    await sleep(5);
+    await work.untilStarted("a");
 
     await engine.cancel(run.id);
     await run.finished;
@@ -109,9 +114,9 @@ describe("cancel", () => {
   });
 
   test("an in-flight node that fails because it was aborted is recorded as cancelled", async () => {
-    const { engine, records } = setup();
+    const { engine, work, records } = setup();
     const run = await engine.execute({ nodes: [node("w", "test.work@1", { ms: 1000 })], edges: [] }, null);
-    await sleep(5);
+    await work.untilStarted("w");
 
     await engine.cancel(run.id);
     await run.finished;
@@ -128,7 +133,7 @@ describe("cancel", () => {
       },
       null,
     );
-    await sleep(5);
+    await work.untilStarted("first");
 
     await engine.cancel(run.id);
     await run.finished;
@@ -180,13 +185,33 @@ describe("cancel", () => {
   });
 
   test("cancelling twice is harmless", async () => {
-    const { engine, events } = setup();
+    const { engine, work, events } = setup();
     const run = await engine.execute({ nodes: [node("w", "test.work@1", { ms: 1000 })], edges: [] }, null);
-    await sleep(5);
+    await work.untilStarted("w");
 
     await Promise.all([engine.cancel(run.id), engine.cancel(run.id)]);
 
     expect((await run.finished).status).toBe("cancelled");
     expect(events.filter((e) => e.type === "run:cancelled")).toHaveLength(1);
+  });
+
+  test("a cancel arriving as a finished run is recorded leaves it completed", async () => {
+    const inner = createInMemoryStorage();
+    let cancelDuringFinish: (() => Promise<void>) | undefined;
+    const storage: StorageAdapter = {
+      ...inner,
+      saveRun: async (run) => {
+        await inner.saveRun(run);
+        // The run is recorded completed but hasn't returned yet.
+        if (run.status === "completed") await cancelDuringFinish?.();
+      },
+    };
+    const { engine } = harness({ storage });
+    engine.register(worker().nodeType);
+    const run = await engine.execute({ nodes: [node("w", "test.work@1", { ms: 0 })], edges: [] }, null);
+    cancelDuringFinish = () => engine.cancel(run.id);
+
+    expect((await run.finished).status).toBe("completed");
+    expect((await inner.getRun(run.id))?.status).toBe("completed");
   });
 });

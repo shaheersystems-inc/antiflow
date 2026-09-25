@@ -159,7 +159,11 @@ weigh the same tradeoffs rather than re-litigating from scratch.
   `cancelling`. Nodes waiting for a scheduler slot or in a retry backoff stop without
   another attempt; in-flight attempts see their signal abort. Once they settle the run is
   `cancelled` (`run:cancelled`). An in-flight node that still succeeds stays `succeeded`;
-  one that ends in an error is `cancelled` (keeping the error), as is every node left unrun.
+  one that ends in an error is `cancelled` (keeping the error, since it was most likely
+  caused by the abort), as is every node left unrun. No `node:*` event is emitted for
+  cancelled nodes: `run:cancelled` tells an attached UI that every node not yet terminal was
+  cancelled, and the storage adapter holds the details. A cancel that arrives once in-flight
+  work has drained and the run is being finalized has no effect.
 
 - **Error isolation**: A node failure only halts its own branch. Independent branches (that
   don't depend on the failed node) keep running to completion. A failed node persists a
