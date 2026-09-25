@@ -70,11 +70,31 @@ export interface AnyNodeType extends Omit<NodeTypeDefinition, "config" | "handle
 
 // ---- Workflow definition --------------------------------------------------
 
+/**
+ * Delay before the next attempt: `fixed` waits `delayMs` every time, `exponential` doubles it
+ * after each failed attempt, and a function receives the number of the attempt that just
+ * failed and returns the delay in ms.
+ */
+export type Backoff = "fixed" | "exponential" | ((attempt: number) => number);
+
+export interface RetryPolicy {
+  /** Total attempts, including the first. */
+  maxAttempts: number;
+  /** Defaults to `fixed`. */
+  backoff?: Backoff;
+  /** Base delay for `fixed` and `exponential` backoff. Defaults to 1000. */
+  delayMs?: number;
+}
+
 export interface WorkflowNode {
   id: string;
   /** Node type id, `type@version`. */
   type: string;
   config: unknown;
+  /** Fails an attempt that runs longer than this, aborting its signal. No timeout if unset. */
+  timeoutMs?: number;
+  /** Retries failed attempts, timeouts included. A single attempt if unset. */
+  retry?: RetryPolicy;
 }
 
 export interface Edge {

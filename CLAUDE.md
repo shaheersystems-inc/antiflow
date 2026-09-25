@@ -24,6 +24,7 @@ below rather than inventing structure ad hoc.
 - `src/engine.ts` — `createEngine` (register, execute, subscribe) and run execution.
 - `src/planner.ts` — pure graph planner: which nodes are ready and which are skipped.
 - `src/registry.ts` — the node type registry: registration checks and `listNodeTypes()` info.
+- `src/runner.ts` — the node runner: attempts, timeouts, retries/backoff, result normalizing.
 - `src/scheduler.ts` — the `Scheduler` interface and the in-process scheduler (concurrency caps).
 - `src/validation.ts` — workflow definition validation (structured `ValidationIssue`s).
 - `src/types.ts` — workflow definition, node type, record, storage adapter and event types.

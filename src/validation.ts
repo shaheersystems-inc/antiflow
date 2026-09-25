@@ -1,5 +1,5 @@
 import type { NodeTypeRegistry } from "./registry.ts";
-import type { WorkflowDefinition } from "./types.ts";
+import type { WorkflowDefinition, WorkflowNode } from "./types.ts";
 
 export type ValidationIssue =
   | { code: "duplicate-node-id"; nodeId: string; message: string }
@@ -11,6 +11,8 @@ export type ValidationIssue =
       /** The node type's config schema errors, with paths relative to the node's config. */
       configIssues: { path: (string | number)[]; message: string }[];
     }
+  | { code: "invalid-timeout"; nodeId: string; message: string }
+  | { code: "invalid-retry-policy"; nodeId: string; message: string }
   | { code: "unknown-edge-node"; edgeIndex: number; nodeId: string; message: string }
   | {
       code: "unknown-port";
@@ -49,6 +51,7 @@ export function validateWorkflow(
       });
     }
     seenIds.add(node.id);
+    issues.push(...executionOptionIssues(node));
 
     const nodeType = registry.get(node.type);
     if (!nodeType) {
@@ -144,6 +147,31 @@ export function validateWorkflow(
       nodeIds,
       message: `Nodes ${nodeIds.map((id) => `"${id}"`).join(", ")} form a cycle`,
     });
+  }
+  return issues;
+}
+
+function executionOptionIssues({ id, timeoutMs, retry }: WorkflowNode): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  if (timeoutMs !== undefined && !(typeof timeoutMs === "number" && timeoutMs > 0 && Number.isFinite(timeoutMs))) {
+    issues.push({ code: "invalid-timeout", nodeId: id, message: `Node "${id}" has an invalid timeoutMs; it must be a positive number` });
+  }
+  if (retry === undefined) return issues;
+  const problems: string[] = [];
+  if (typeof retry !== "object" || retry === null) {
+    problems.push("it must be an object");
+  } else {
+    if (!Number.isInteger(retry.maxAttempts) || retry.maxAttempts < 1) problems.push("maxAttempts must be an integer of at least 1");
+    const { backoff, delayMs } = retry;
+    if (backoff !== undefined && backoff !== "fixed" && backoff !== "exponential" && typeof backoff !== "function") {
+      problems.push(`backoff must be "fixed", "exponential" or a function`);
+    }
+    if (delayMs !== undefined && !(typeof delayMs === "number" && delayMs >= 0 && Number.isFinite(delayMs))) {
+      problems.push("delayMs must be a non-negative number");
+    }
+  }
+  if (problems.length > 0) {
+    issues.push({ code: "invalid-retry-policy", nodeId: id, message: `Node "${id}" has an invalid retry policy: ${problems.join("; ")}` });
   }
   return issues;
 }

@@ -1,7 +1,9 @@
 import { plan } from "./planner.ts";
-import type { NodeResult, NodeState } from "./planner.ts";
+import type { NodeState } from "./planner.ts";
 import { NodeTypeRegistry } from "./registry.ts";
 import type { NodeTypeInfo } from "./registry.ts";
+import { now, runNode } from "./runner.ts";
+import type { RunnerContext } from "./runner.ts";
 import { createInProcessScheduler } from "./scheduler.ts";
 import type { ConcurrencyOptions } from "./scheduler.ts";
 import { createInMemoryStorage } from "./storage/memory.ts";
@@ -10,12 +12,10 @@ import type {
   EngineEvent,
   JsonValue,
   Logger,
-  NodeRecord,
   NodeTypeDefinition,
   RunRecord,
   StorageAdapter,
   WorkflowDefinition,
-  WorkflowNode,
 } from "./types.ts";
 import { validateWorkflow, WorkflowValidationError } from "./validation.ts";
 
@@ -43,9 +43,10 @@ export function createEngine(options: EngineOptions = {}) {
   const emit = (event: EngineEvent) => {
     for (const listener of listeners) listener(event);
   };
+  const runner: RunnerContext = { storage, scheduler, logger, emit };
 
-  async function runWorkflow(run: RunRecord): Promise<RunRecord> {
-    const snapshot = run.workflowSnapshot;
+  /** Runs `run` to its end against `snapshot`, which may hold values storage can't (backoff functions). */
+  async function runWorkflow(run: RunRecord, snapshot: WorkflowDefinition): Promise<RunRecord> {
     const states = new Map<string, NodeState>();
     const inFlight = new Map<string, Promise<void>>();
     // Every node starts out pending; nodes downstream of a failure stay that way.
@@ -66,7 +67,7 @@ export function createEngine(options: EngineOptions = {}) {
         states.set(node.id, { status: "running" });
         const nodeType = registry.get(node.type)!;
         const input = nodeType.inputs.length === 0 ? run.input : inputs;
-        const settled = runNode(run, node, nodeType, input).then((state) => {
+        const settled = runNode(runner, run.id, node, nodeType, input).then((state) => {
           states.set(node.id, state);
           inFlight.delete(node.id);
         });
@@ -81,37 +82,6 @@ export function createEngine(options: EngineOptions = {}) {
     await storage.saveRun(finished);
     emit({ type: failed ? "run:failed" : "run:completed", runId: run.id });
     return finished;
-  }
-
-  /**
-   * Runs one node once the scheduler grants it a slot, persisting and announcing its progress.
-   * Until then its node record stays `pending`. Resolves with the node's final state; a
-   * handler that throws, or returns an invalid result, fails the node rather than the run.
-   */
-  function runNode(run: RunRecord, node: WorkflowNode, nodeType: AnyNodeType, input: JsonValue): Promise<NodeState> {
-    return scheduler.run(node.type, async () => {
-      const attempt = { runId: run.id, nodeId: node.id, attempt: 1 };
-      const record: NodeRecord = { ...attempt, status: "running", startedAt: now() };
-      await storage.saveNodeRecord(record);
-      emit({ type: "node:start", ...attempt });
-      let result: NodeResult;
-      try {
-        const returned = await nodeType.handler(input, nodeType.config.parse(node.config), {
-          ...attempt,
-          logger: tagLogger(logger, attempt),
-          signal: new AbortController().signal,
-        });
-        result = normalizeResult(nodeType, returned);
-      } catch (e) {
-        const error = e instanceof Error ? e.message : String(e);
-        await storage.saveNodeRecord({ ...record, status: "failed", error, completedAt: now() });
-        emit({ type: "node:failed", ...attempt, error });
-        return { status: "failed" };
-      }
-      await storage.saveNodeRecord({ ...record, status: "succeeded", ...result, completedAt: now() });
-      emit({ type: "node:succeeded", ...attempt });
-      return { status: "succeeded", ...result };
-    });
   }
 
   return {
@@ -145,15 +115,16 @@ export function createEngine(options: EngineOptions = {}) {
       const issues = validateWorkflow(workflow, registry);
       if (issues.length > 0) throw new WorkflowValidationError(issues);
 
+      const snapshot = snapshotOf(workflow);
       const run: RunRecord = {
         id: crypto.randomUUID(),
         status: "running",
         startedAt: now(),
-        workflowSnapshot: structuredClone(workflow),
+        workflowSnapshot: storable(snapshot),
         input: triggerInput,
       };
       await storage.saveRun(run);
-      return { id: run.id, finished: runWorkflow(run) };
+      return { id: run.id, finished: runWorkflow(run, snapshot) };
     },
   };
 }
@@ -163,35 +134,31 @@ export type Engine = ReturnType<typeof createEngine>;
 const noop = () => {};
 const silentLogger: Logger = { debug: noop, info: noop, warn: noop, error: noop };
 
-function tagLogger(sink: Logger, tags: Record<string, unknown>): Logger {
-  const level =
-    (method: keyof Logger) =>
-    (message: string, fields?: Record<string, unknown>) =>
-      sink[method](message, { ...tags, ...fields });
-  return { debug: level("debug"), info: level("info"), warn: level("warn"), error: level("error") };
+
+/**
+ * A deep copy of a workflow definition, so later edits to it can't affect the run. Custom
+ * backoff functions are kept by reference; everything else must be structured-cloneable.
+ */
+function snapshotOf(workflow: WorkflowDefinition): WorkflowDefinition {
+  const snapshot = structuredClone(storable(workflow));
+  snapshot.nodes.forEach((node, i) => {
+    const backoff = workflow.nodes[i]!.retry?.backoff;
+    if (typeof backoff === "function") node.retry!.backoff = backoff;
+  });
+  return snapshot;
 }
 
 /**
- * Turns a handler's return value into the node's result: a single-output node's value is its
- * `output`; a multi-port node must return an object of fired ports, all of them declared. A
- * port whose value is `undefined` is not fired.
+ * The workflow definition as persisted: custom backoff functions can't be stored, so they're
+ * dropped, and a run resumed from storage falls back to the default backoff for those nodes.
  */
-function normalizeResult(nodeType: AnyNodeType, returned: JsonValue): NodeResult {
-  if (nodeType.outputs.length <= 1) return { output: returned ?? null };
-  if (typeof returned !== "object" || returned === null || Array.isArray(returned)) {
-    throw new Error(
-      `Node type "${nodeType.type}@${nodeType.version}" has several output ports, so its handler must return an object keyed by the ports it fired`,
-    );
-  }
-  const undeclared = Object.keys(returned).filter((port) => !nodeType.outputs.includes(port));
-  if (undeclared.length > 0) {
-    throw new Error(
-      `Handler returned undeclared output port(s) ${undeclared.map((p) => `"${p}"`).join(", ")}; node type "${nodeType.type}@${nodeType.version}" declares ${nodeType.outputs.map((p) => `"${p}"`).join(", ")}`,
-    );
-  }
-  return { outputsByPort: Object.fromEntries(Object.entries(returned).filter(([, value]) => value !== undefined)) };
-}
-
-function now(): string {
-  return new Date().toISOString();
+function storable(workflow: WorkflowDefinition): WorkflowDefinition {
+  return {
+    ...workflow,
+    nodes: workflow.nodes.map((node) => {
+      if (typeof node.retry?.backoff !== "function") return node;
+      const { backoff, ...retry } = node.retry;
+      return { ...node, retry };
+    }),
+  };
 }
