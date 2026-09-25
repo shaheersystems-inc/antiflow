@@ -1,4 +1,6 @@
 export { createEngine, ResumeError } from "./engine.ts";
+export { credentialRef } from "./credentials.ts";
+export type { CredentialRef, CredentialStore } from "./credentials.ts";
 export type { Engine, EngineOptions, ResumeRefusal, RunHandle } from "./engine.ts";
 export { defineNodeType } from "./node-type.ts";
 export { NodeTypeRegistrationError } from "./registry.ts";

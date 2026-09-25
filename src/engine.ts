@@ -1,3 +1,4 @@
+import type { CredentialStore } from "./credentials.ts";
 import { plan } from "./planner.ts";
 import type { NodeState } from "./planner.ts";
 import { isOptionalInput, NodeTypeRegistry } from "./registry.ts";
@@ -46,6 +47,8 @@ export interface EngineOptions {
   logger?: Logger;
   /** Caps on how many handlers run at once; configured per engine, never in workflow definitions. */
   concurrency?: ConcurrencyOptions;
+  /** Resolves `{ credentialId }` references in node config. Needed only if config uses them. */
+  credentials?: CredentialStore;
 }
 
 export interface RunHandle {
@@ -75,7 +78,7 @@ export function createEngine(options: EngineOptions = {}) {
   const emit = (event: EngineEvent) => {
     for (const listener of listeners) listener(event);
   };
-  const runner: RunnerContext = { storage, scheduler, logger, emit };
+  const runner: RunnerContext = { storage, scheduler, logger, emit, credentials: options.credentials };
   const activeRuns = new Map<string, ActiveRun>();
   const nodeHasOptionalInput = (node: WorkflowNode, port: string) => isOptionalInput(registry.get(node.type), port);
   /** Resumes being prepared, by run id. */
