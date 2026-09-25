@@ -1,5 +1,6 @@
 import type { NodeResult, NodeState } from "./planner.ts";
 import type { Scheduler } from "./scheduler.ts";
+import { now, sleep } from "./time.ts";
 import type {
   AnyNodeType,
   EngineEvent,
@@ -29,55 +30,87 @@ const DEFAULT_DELAY_MS = 1000;
  * attempts run out. Never rejects for a handler's sake: failures end up in the node's state.
  */
 export async function runNode(
-  { storage, scheduler, logger, emit }: RunnerContext,
+  runner: RunnerContext,
   runId: string,
   node: WorkflowNode,
   nodeType: AnyNodeType,
   input: JsonValue,
 ): Promise<NodeState> {
+  const { storage, emit } = runner;
   const maxAttempts = node.retry?.maxAttempts ?? 1;
   const startedAt = now();
   for (let attemptNumber = 1; ; attemptNumber++) {
     const attempt = { runId, nodeId: node.id, attempt: attemptNumber };
     const record: NodeRecord = { ...attempt, status: "running", startedAt };
-    const outcome = await scheduler.run(node.type, async () => {
-      await storage.saveNodeRecord(record);
-      emit({ type: "node:start", ...attempt });
-      const controller = new AbortController();
-      try {
-        const context = { ...attempt, logger: tagLogger(logger, attempt), signal: controller.signal };
-        const returned = await withTimeout(
-          nodeType.handler(input, nodeType.config.parse(node.config), context),
-          node.timeoutMs,
-          controller,
-        );
-        return { result: normalizeResult(nodeType, returned) };
-      } catch (e) {
-        return { error: e instanceof Error ? e.message : String(e) };
-      }
-    });
+    const outcome = await runAttempt(runner, node, nodeType, input, record);
 
     if ("result" in outcome) {
       await storage.saveNodeRecord({ ...record, status: "succeeded", ...outcome.result, completedAt: now() });
       emit({ type: "node:succeeded", ...attempt });
       return { status: "succeeded", ...outcome.result };
     }
-    if (attemptNumber >= maxAttempts) {
-      await storage.saveNodeRecord({ ...record, status: "failed", error: outcome.error, completedAt: now() });
-      emit({ type: "node:failed", ...attempt, error: outcome.error });
+    let error = outcome.error;
+    const delay = attemptNumber < maxAttempts ? backoffDelay(node.retry!, attemptNumber) : undefined;
+    if (typeof delay === "string") error = delay;
+    if (typeof delay !== "number") {
+      await storage.saveNodeRecord({ ...record, status: "failed", error, completedAt: now() });
+      emit({ type: "node:failed", ...attempt, error });
       return { status: "failed" };
     }
     // Still running: record the failed attempt's error until the next attempt starts.
-    await storage.saveNodeRecord({ ...record, error: outcome.error });
-    await sleep(backoffDelay(node.retry!, attemptNumber));
+    await storage.saveNodeRecord({ ...record, error });
+    await sleep(delay);
   }
 }
 
-/** Delay in ms before the attempt after `failedAttempt`. */
-function backoffDelay({ backoff = "fixed", delayMs = DEFAULT_DELAY_MS }: RetryPolicy, failedAttempt: number): number {
-  const delay =
-    backoff === "fixed" ? delayMs : backoff === "exponential" ? delayMs * 2 ** (failedAttempt - 1) : backoff(failedAttempt);
-  return Number.isFinite(delay) && delay > 0 ? delay : 0;
+/**
+ * Runs one attempt in a scheduler slot and resolves with its outcome. The slot is held until
+ * the handler really settles, even after a timeout has already failed the attempt, so a
+ * handler that ignores its signal still counts against the concurrency caps.
+ */
+function runAttempt(
+  { storage, scheduler, logger, emit }: RunnerContext,
+  node: WorkflowNode,
+  nodeType: AnyNodeType,
+  input: JsonValue,
+  record: NodeRecord,
+): Promise<{ result: NodeResult } | { error: string }> {
+  return new Promise((resolve, reject) => {
+    scheduler
+      .run(node.type, async () => {
+        await storage.saveNodeRecord(record);
+        const attempt = { runId: record.runId, nodeId: record.nodeId, attempt: record.attempt };
+        emit({ type: "node:start", ...attempt });
+        const controller = new AbortController();
+        const context = { ...attempt, logger: tagLogger(logger, attempt), signal: controller.signal };
+        let handling: Promise<JsonValue>;
+        try {
+          handling = Promise.resolve(nodeType.handler(input, nodeType.config.parse(node.config), context));
+        } catch (e) {
+          handling = Promise.reject(e);
+        }
+        try {
+          resolve({ result: normalizeResult(nodeType, await withTimeout(handling, node.timeoutMs, controller)) });
+        } catch (e) {
+          resolve({ error: e instanceof Error ? e.message : String(e) });
+        }
+        await handling.catch(() => {});
+      })
+      .catch(reject);
+  });
+}
+
+/**
+ * Delay in ms before the attempt after `failedAttempt`, or an error message if a custom
+ * backoff function returned something that isn't a usable delay.
+ */
+function backoffDelay({ backoff = "fixed", delayMs = DEFAULT_DELAY_MS }: RetryPolicy, failedAttempt: number): number | string {
+  if (backoff === "fixed") return delayMs;
+  if (backoff === "exponential") return delayMs * 2 ** (failedAttempt - 1);
+  const delay = backoff(failedAttempt);
+  return typeof delay === "number" && delay >= 0 && Number.isFinite(delay)
+    ? delay
+    : `Custom backoff returned ${String(delay)} after attempt ${failedAttempt}; expected a non-negative number of ms`;
 }
 
 /**
@@ -133,10 +166,4 @@ function tagLogger(sink: Logger, tags: Record<string, unknown>): Logger {
     (message: string, fields?: Record<string, unknown>) =>
       sink[method](message, { ...tags, ...fields });
   return { debug: level("debug"), info: level("info"), warn: level("warn"), error: level("error") };
-}
-
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-export function now(): string {
-  return new Date().toISOString();
 }

@@ -25,6 +25,7 @@ below rather than inventing structure ad hoc.
 - `src/planner.ts` — pure graph planner: which nodes are ready and which are skipped.
 - `src/registry.ts` — the node type registry: registration checks and `listNodeTypes()` info.
 - `src/runner.ts` — the node runner: attempts, timeouts, retries/backoff, result normalizing.
+- `src/time.ts` — `now()` timestamps and `sleep()`.
 - `src/scheduler.ts` — the `Scheduler` interface and the in-process scheduler (concurrency caps).
 - `src/validation.ts` — workflow definition validation (structured `ValidationIssue`s).
 - `src/types.ts` — workflow definition, node type, record, storage adapter and event types.
@@ -75,8 +76,8 @@ HTTP/scheduler service, but rich enough in its type/metadata surface to be plugg
   currently-registered handler version differs. Multiple versions of the same type can be
   registered simultaneously.
 - Optional per-node `timeoutMs` (aborts the handler via `AbortSignal`, then fails it,
-  subject to retry policy) and retry policy `{ maxAttempts, backoff }` where `backoff` is
-  `'fixed' | 'exponential' | ((attempt) => delayMs)`. Retries fully re-invoke the handler
+  subject to retry policy) and retry policy `{ maxAttempts, backoff, delayMs }` where `backoff` is
+  `'fixed' | 'exponential' | ((attempt) => delayMs)` and `delayMs` is the base delay. Retries fully re-invoke the handler
   from scratch — node authors must write idempotent-ish, retry-safe handlers.
 
 ## Execution

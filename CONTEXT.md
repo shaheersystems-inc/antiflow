@@ -41,8 +41,9 @@ code, tests, issues, and docs. The reasoning behind the concepts lives in
 - **Port** — a named input or output on a node. Each input port accepts at most one edge.
 - **Edge** — a connection `nodeA:outPort → nodeB:inPort` carrying exactly one JSON value.
   _Avoid: "link", "wire", "connection"._
-- **Retry policy** — `{ maxAttempts, backoff }`, `backoff` being `'fixed' | 'exponential' |
-  (attempt) => delayMs`.
+- **Retry policy** — `{ maxAttempts, backoff, delayMs }`, `backoff` being `'fixed' |
+  'exponential' | (attempt) => delayMs` (default `'fixed'`) and `delayMs` the base delay for
+  fixed/exponential backoff (default 1000).
 
 ## Execution (dynamic)
 

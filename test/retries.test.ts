@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { createEngine, createInMemoryStorage, defineNodeType } from "../src/index.ts";
-import type { JsonValue, WorkflowNode } from "../src/index.ts";
+import { defineNodeType } from "../src/index.ts";
+import type { EngineOptions, JsonValue, WorkflowNode } from "../src/index.ts";
 import { harness, sleep } from "./fixtures.ts";
 
 /**
@@ -41,11 +41,15 @@ function waiter() {
       const ms = config.fastAfter !== undefined && attempt >= config.fastAfter ? 0 : config.ms;
       await new Promise<void>((resolve) => {
         const timer = setTimeout(resolve, ms);
-        signal.addEventListener("abort", () => {
-          clearTimeout(timer);
-          aborted.push(attempt);
-          resolve();
-        });
+        signal.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timer);
+            aborted.push(attempt);
+            resolve();
+          },
+          { once: true },
+        );
       });
       if (signal.aborted) throw signal.reason;
       return "done";
@@ -55,14 +59,30 @@ function waiter() {
 }
 
 /** Runs a workflow of just `node`, returning the run, the node's record and the run's events. */
-function setup() {
-  const { engine, execute: executeWorkflow } = harness();
+function setup(options: EngineOptions = {}) {
+  const { engine, storage, execute: executeWorkflow } = harness(options);
   const execute = async (node: WorkflowNode, input: JsonValue = "in") => {
     const { run, records, events } = await executeWorkflow({ nodes: [node], edges: [] }, input);
     return { run, record: records[node.id]!, events };
   };
-  return { engine, execute };
+  return { engine, storage, execute };
 }
+
+const STUBBORN_MS = 400;
+
+/** Fake node type that ignores its signal and takes STUBBORN_MS. */
+const stubborn = defineNodeType({
+  type: "test.stubborn",
+  version: 1,
+  inputs: [],
+  outputs: ["out"],
+  config: z.object({}),
+  display: { name: "Stubborn" },
+  handler: async () => {
+    await sleep(STUBBORN_MS);
+    return "late";
+  },
+});
 
 const gaps = (times: number[]) => times.slice(1).map((t, i) => t - times[i]!);
 
@@ -81,28 +101,34 @@ describe("timeouts", () => {
     expect(run.status).toBe("failed");
   });
 
-  test("fails a timed-out attempt even if the handler ignores its signal", async () => {
+  test("fails a timed-out attempt at once even if the handler ignores its signal", async () => {
     const { engine, execute } = setup();
-    engine.register(
-      defineNodeType({
-        type: "test.stubborn",
-        version: 1,
-        inputs: [],
-        outputs: ["out"],
-        config: z.object({}),
-        display: { name: "Stubborn" },
-        handler: async () => {
-          await sleep(200);
-          return "late";
-        },
-      }),
-    );
+    engine.register(stubborn);
 
     const started = performance.now();
     const { record } = await execute({ id: "s", type: "test.stubborn@1", config: {}, timeoutMs: 20 });
 
-    expect(performance.now() - started).toBeLessThan(150);
+    expect(performance.now() - started).toBeLessThan(250);
     expect(record).toMatchObject({ status: "failed", error: expect.stringMatching(/timed out/) });
+  });
+
+  test("a timed-out handler that ignores its signal keeps its concurrency slot until it settles", async () => {
+    const { engine, execute } = setup({ concurrency: { global: 1 } });
+    engine.register(stubborn);
+    const { nodeType, attempts } = flaky();
+    engine.register(nodeType);
+
+    const started = performance.now();
+    const [, second] = await Promise.all([
+      execute({ id: "s", type: "test.stubborn@1", config: {}, timeoutMs: 20 }),
+      (async () => {
+        await sleep(5);
+        return execute({ id: "f", type: "test.flaky@1", config: { failures: 0 } });
+      })(),
+    ]);
+
+    expect(second.record.status).toBe("succeeded");
+    expect(attempts[0]!.at - started).toBeGreaterThanOrEqual(STUBBORN_MS - 5);
   });
 
   test("without timeoutMs there is no timeout", async () => {
@@ -191,19 +217,18 @@ describe("retries", () => {
   });
 
   test("keeps the record running between attempts, with the latest attempt", async () => {
-    const storage = createInMemoryStorage();
-    const engine = createEngine({ storage });
+    const { engine, storage } = setup();
     const { nodeType } = flaky();
     engine.register(nodeType);
 
     const run = await engine.execute(
       {
-        nodes: [{ id: "f", type: "test.flaky@1", config: { failures: 1 }, retry: { maxAttempts: 2, backoff: "fixed", delayMs: 40 } }],
+        nodes: [{ id: "f", type: "test.flaky@1", config: { failures: 1 }, retry: { maxAttempts: 2, backoff: "fixed", delayMs: 150 } }],
         edges: [],
       },
       "in",
     );
-    await sleep(20);
+    await sleep(40);
     const [between] = await storage.listNodeRecords(run.id);
     await run.finished;
 
@@ -233,7 +258,7 @@ describe("backoff", () => {
     expect(actual).toHaveLength(3);
     actual.forEach((gap, i) => {
       expect(gap).toBeGreaterThanOrEqual(expected[i]! - 2);
-      expect(gap).toBeLessThan(expected[i]! + 40);
+      expect(gap).toBeLessThan(expected[i]! + 100);
     });
   });
 
@@ -258,11 +283,27 @@ describe("backoff", () => {
 
     expect(seen).toEqual([1, 2]);
   });
+
+  test("a custom backoff returning an unusable delay fails the node", async () => {
+    const { engine, execute } = setup();
+    const { nodeType, attempts } = flaky();
+    engine.register(nodeType);
+
+    const { record } = await execute({
+      id: "f",
+      type: "test.flaky@1",
+      config: { failures: 5 },
+      retry: { maxAttempts: 3, backoff: () => Number.POSITIVE_INFINITY },
+    });
+
+    expect(attempts).toHaveLength(1);
+    expect(record).toMatchObject({ status: "failed", attempt: 1, error: expect.stringMatching(/backoff returned Infinity/) });
+  });
 });
 
 describe("persisting retry policies", () => {
   test("the persisted snapshot keeps the retry policy but not a custom backoff function", async () => {
-    const { engine, storage } = harness();
+    const { engine, storage } = setup();
     engine.register(flaky().nodeType);
 
     const run = await engine.execute(

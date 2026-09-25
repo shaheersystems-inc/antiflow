@@ -2,13 +2,14 @@ import { plan } from "./planner.ts";
 import type { NodeState } from "./planner.ts";
 import { NodeTypeRegistry } from "./registry.ts";
 import type { NodeTypeInfo } from "./registry.ts";
-import { now, runNode } from "./runner.ts";
+import { runNode } from "./runner.ts";
 import type { RunnerContext } from "./runner.ts";
 import { createInProcessScheduler } from "./scheduler.ts";
 import type { ConcurrencyOptions } from "./scheduler.ts";
 import { createInMemoryStorage } from "./storage/memory.ts";
 import type {
   AnyNodeType,
+  Backoff,
   EngineEvent,
   JsonValue,
   Logger,
@@ -17,6 +18,7 @@ import type {
   StorageAdapter,
   WorkflowDefinition,
 } from "./types.ts";
+import { now } from "./time.ts";
 import { validateWorkflow, WorkflowValidationError } from "./validation.ts";
 
 export interface EngineOptions {
@@ -115,12 +117,12 @@ export function createEngine(options: EngineOptions = {}) {
       const issues = validateWorkflow(workflow, registry);
       if (issues.length > 0) throw new WorkflowValidationError(issues);
 
-      const snapshot = snapshotOf(workflow);
+      const { snapshot, stored } = takeSnapshot(workflow);
       const run: RunRecord = {
         id: crypto.randomUUID(),
         status: "running",
         startedAt: now(),
-        workflowSnapshot: storable(snapshot),
+        workflowSnapshot: stored,
         input: triggerInput,
       };
       await storage.saveRun(run);
@@ -134,31 +136,27 @@ export type Engine = ReturnType<typeof createEngine>;
 const noop = () => {};
 const silentLogger: Logger = { debug: noop, info: noop, warn: noop, error: noop };
 
-
 /**
- * A deep copy of a workflow definition, so later edits to it can't affect the run. Custom
- * backoff functions are kept by reference; everything else must be structured-cloneable.
+ * Deep-copies a workflow definition so later edits to it can't affect the run. `snapshot` is
+ * what the run executes; `stored` is what gets persisted. Custom backoff functions can't be
+ * stored, so only `snapshot` keeps them (by reference), and a run resumed from storage uses
+ * the default backoff for those nodes.
  */
-function snapshotOf(workflow: WorkflowDefinition): WorkflowDefinition {
-  const snapshot = structuredClone(storable(workflow));
-  snapshot.nodes.forEach((node, i) => {
-    const backoff = workflow.nodes[i]!.retry?.backoff;
-    if (typeof backoff === "function") node.retry!.backoff = backoff;
-  });
-  return snapshot;
-}
-
-/**
- * The workflow definition as persisted: custom backoff functions can't be stored, so they're
- * dropped, and a run resumed from storage falls back to the default backoff for those nodes.
- */
-function storable(workflow: WorkflowDefinition): WorkflowDefinition {
-  return {
+function takeSnapshot(workflow: WorkflowDefinition): { snapshot: WorkflowDefinition; stored: WorkflowDefinition } {
+  const backoffs = new Map<string, Backoff>();
+  const stored: WorkflowDefinition = structuredClone({
     ...workflow,
     nodes: workflow.nodes.map((node) => {
       if (typeof node.retry?.backoff !== "function") return node;
       const { backoff, ...retry } = node.retry;
+      backoffs.set(node.id, backoff);
       return { ...node, retry };
     }),
-  };
+  });
+  const snapshot = structuredClone(stored);
+  for (const node of snapshot.nodes) {
+    const backoff = backoffs.get(node.id);
+    if (backoff) node.retry!.backoff = backoff;
+  }
+  return { snapshot, stored };
 }
