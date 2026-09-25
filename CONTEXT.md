@@ -74,8 +74,8 @@ code, tests, issues, and docs. The reasoning behind the concepts lives in
 ## Statuses
 
 - **Run status** — `running`, `cancelling`, `cancelled`, `completed`, `failed`.
-- **Node status** — `pending`, `running`, `succeeded`, `failed`, `skipped`, plus a distinct
-  terminal status for nodes left unrun by a cancel.
+- **Node status** — `pending`, `running`, `succeeded`, `failed`, `skipped`, and `cancelled`
+  for nodes a cancel left unrun (or stopped mid-attempt).
 
 ## Infrastructure
 

@@ -109,8 +109,9 @@ export interface WorkflowDefinition {
 
 // ---- Persisted records ----------------------------------------------------
 
-export type RunStatus = "running" | "completed" | "failed";
-export type NodeStatus = "pending" | "running" | "succeeded" | "failed" | "skipped";
+export type RunStatus = "running" | "cancelling" | "cancelled" | "completed" | "failed";
+/** `cancelled`: the run was cancelled before the node could finish (or start) running. */
+export type NodeStatus = "pending" | "running" | "succeeded" | "failed" | "skipped" | "cancelled";
 
 export interface RunRecord {
   id: string;
@@ -154,6 +155,7 @@ export type EngineEvent =
   | { type: "node:failed"; runId: string; nodeId: string; attempt: number; error: string }
   | { type: "node:skipped"; runId: string; nodeId: string }
   | { type: "run:completed"; runId: string }
-  | { type: "run:failed"; runId: string };
+  | { type: "run:failed"; runId: string }
+  | { type: "run:cancelled"; runId: string };
 
 export type EngineEventType = EngineEvent["type"];

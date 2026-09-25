@@ -155,6 +155,12 @@ weigh the same tradeoffs rather than re-litigating from scratch.
   and does not forcibly kill them. The run transitions `cancelling → cancelled` once
   in-flight work actually drains.
 
+  Concretely: `engine.cancel(runId)` aborts the run's cancel signal and records the run
+  `cancelling`. Nodes waiting for a scheduler slot or in a retry backoff stop without
+  another attempt; in-flight attempts see their signal abort. Once they settle the run is
+  `cancelled` (`run:cancelled`). An in-flight node that still succeeds stays `succeeded`;
+  one that ends in an error is `cancelled` (keeping the error), as is every node left unrun.
+
 - **Error isolation**: A node failure only halts its own branch. Independent branches (that
   don't depend on the failed node) keep running to completion. A failed node persists a
   resumable state so the host can retry just that node later without re-running the whole
