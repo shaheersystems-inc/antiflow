@@ -206,7 +206,10 @@ weigh the same tradeoffs rather than re-litigating from scratch.
   `type@version` in the snapshot isn't registered, keeps `succeeded` and `skipped` nodes as
   they are, and runs every other node again with a fresh set of attempts. Runs that are
   `running` (interrupted) or `failed` can be resumed; `completed`, `cancelling` and
-  `cancelled` runs can't.
+  `cancelled` runs can't (refusals are a `ResumeError` with a `reason`). A run a crashed
+  engine left `cancelling` is finalized by calling `cancel()` on it. Only one engine may
+  drive a run at a time; the library can't detect a run still live in another process, so
+  the host must only resume runs whose engine is gone.
 
 - **Live progress**: The engine emits events during `execute()` —
   `node:start | node:succeeded | node:failed | node:skipped`,
