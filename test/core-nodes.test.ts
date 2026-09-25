@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import * as core from "../src/index.ts";
+import * as api from "../src/index.ts";
 import { createEngine, defineNodeType } from "../src/index.ts";
 import type { JsonValue, WorkflowDefinition } from "../src/index.ts";
 import { registerCoreNodes } from "../src/nodes/core/index.ts";
@@ -37,13 +37,13 @@ function setup() {
   return h;
 }
 
-const statusesOf = (records: Record<string, core.NodeRecord>) =>
+const statusesOf = (records: Record<string, api.NodeRecord>) =>
   Object.fromEntries(Object.entries(records).map(([id, r]) => [id, r.status]));
 
 describe("package boundary", () => {
   test("the core package registers and exports no node implementations", () => {
     expect(createEngine().listNodeTypes()).toEqual([]);
-    const nodeTypeExports = Object.values(core).filter(
+    const nodeTypeExports = Object.values(api).filter(
       (value) => typeof value === "object" && value !== null && "handler" in value,
     );
     expect(nodeTypeExports).toEqual([]);

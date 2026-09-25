@@ -84,6 +84,11 @@ function describeId(nodeType: AnyNodeType | undefined): string {
   return `${type}@${nodeType?.version ?? "<no version>"}`;
 }
 
+/** Whether `port` is one of the node type's optional input ports. */
+export function isOptionalInput(nodeType: AnyNodeType | undefined, port: string): boolean {
+  return nodeType?.optionalInputs?.includes(port) ?? false;
+}
+
 /** Everything wrong with a node type definition; checked at runtime since hosts may not use TypeScript. */
 function definitionProblems(nodeType: AnyNodeType | undefined): string[] {
   if (typeof nodeType !== "object" || nodeType === null) return ["the definition must be an object"];
@@ -97,7 +102,9 @@ function definitionProblems(nodeType: AnyNodeType | undefined): string[] {
   const { optionalInputs } = nodeType;
   if (optionalInputs !== undefined) {
     const declared = Array.isArray(inputs) ? inputs : [];
-    if (!Array.isArray(optionalInputs) || optionalInputs.some((p) => !declared.includes(p))) {
+    const listProblems = portProblems("optionalInputs", optionalInputs);
+    if (listProblems.length > 0) problems.push(...listProblems);
+    else if (optionalInputs.some((p) => !declared.includes(p))) {
       problems.push("optionalInputs must list only declared input ports");
     }
   }
@@ -118,7 +125,7 @@ function definitionProblems(nodeType: AnyNodeType | undefined): string[] {
   return problems;
 }
 
-function portProblems(kind: "inputs" | "outputs", ports: unknown): string[] {
+function portProblems(kind: "inputs" | "outputs" | "optionalInputs", ports: unknown): string[] {
   if (!Array.isArray(ports)) return [`${kind} must be an array of port names`];
   if (!ports.every((p) => typeof p === "string" && p !== "")) return [`${kind} must contain only non-empty strings`];
   if (new Set(ports).size !== ports.length) return [`${kind} must not repeat a port name`];

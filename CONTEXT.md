@@ -62,8 +62,8 @@ code, tests, issues, and docs. The reasoning behind the concepts lives in
 - **Fired port** — an output port present in a handler's return value. Ports a handler
   leaves out are *not fired*.
 - **Skip / skip propagation** — a node whose required input port never resolves (e.g. wired
-  to an unfired port) is marked `skipped` without running; this propagates downstream.
-  A skip is not a failure.
+  to an unfired port), or none of whose wired inputs ever resolve, is marked `skipped`
+  without running; this propagates downstream. A skip is not a failure.
 - **Branch isolation** — a failed node halts only nodes downstream of it; independent
   branches continue. Halted nodes keep their `pending` node record (they may still run if the
   failed node is retried), unlike skipped nodes, which can never run.
