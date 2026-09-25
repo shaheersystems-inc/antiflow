@@ -1,4 +1,4 @@
-export { createEngine } from "./engine.ts";
+export { createEngine, ResumeError } from "./engine.ts";
 export type { Engine, EngineOptions, RunHandle } from "./engine.ts";
 export { defineNodeType } from "./node-type.ts";
 export { NodeTypeRegistrationError } from "./registry.ts";

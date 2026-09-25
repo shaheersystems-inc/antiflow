@@ -201,6 +201,13 @@ weigh the same tradeoffs rather than re-litigating from scratch.
   _Why: without this, editing a workflow while any run is in-flight is a landmine — nodes
   could disappear or ports could be renamed out from under a resumed run._
 
+  Concretely: the snapshot is deep-frozen. `engine.resume(runId)` loads the run record and
+  its node records from storage, refuses (`ResumeError`, naming each node) if any
+  `type@version` in the snapshot isn't registered, keeps `succeeded` and `skipped` nodes as
+  they are, and runs every other node again with a fresh set of attempts. Runs that are
+  `running` (interrupted) or `failed` can be resumed; `completed`, `cancelling` and
+  `cancelled` runs can't.
+
 - **Live progress**: The engine emits events during `execute()` —
   `node:start | node:succeeded | node:failed | node:skipped`,
   `run:completed | run:failed | run:cancelled` — for a UI attached to a live run. The
