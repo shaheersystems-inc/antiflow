@@ -56,8 +56,11 @@ weigh the same tradeoffs rather than re-litigating from scratch.
   _Why: matches n8n/Make branch semantics; prevents handlers from ever silently running
   with partial/garbage input._
 
-  Every declared input port is required and must be wired: validation rejects a workflow
-  with an unconnected input port. A multi-port handler fires exactly the ports present in
+  Input ports are required unless the node type lists them in `optionalInputs`. A required
+  input port must be wired, and validation rejects a workflow with an unconnected one. An
+  optional input port may be left unwired. If it never resolves, it's left out of the input
+  rather than skipping the node. A node is still skipped if none of its wired inputs ever
+  resolve. This is what lets the core Merge node rejoin the branches of an If or Switch. A multi-port handler fires exactly the ports present in
   its returned map (a port whose value is `undefined` counts as not fired); a single-output
   handler always fires its port.
 
@@ -126,6 +129,19 @@ weigh the same tradeoffs rather than re-litigating from scratch.
   fires per attempt, `node:failed` only once attempts run out. A custom backoff function
   isn't serializable, so the persisted snapshot omits it, and a run resumed from storage
   uses the default backoff for that node.
+
+- **Core nodes** (`antiflow/nodes/core`, registered with `registerCoreNodes(engine)`):
+  - `core.if@1` fires `true` or `false` with its input.
+  - `core.switch@1` fires the first matching of `case1`–`case8`, else `default`. Output
+    ports are declared statically, so the number of cases is capped.
+  - `core.merge@1` has optional ports `a`–`d`. It outputs the arrived values as an array,
+    an object or the first value.
+  - `core.set@1` outputs a configured JSON value, optionally laid over an object input.
+  - `core.delay@1` waits `ms`, then passes its input on, and stops early when its signal
+    aborts.
+
+  Conditions are `{ operator, value }`, applied to an optional dot-path `field` of the
+  input. That is plain selection, not a templating or expression language.
 
 ## Execution
 

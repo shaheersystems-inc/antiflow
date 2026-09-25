@@ -4,6 +4,7 @@
   "private": true,
   "exports": {
     ".": "./src/index.ts",
+    "./nodes/core": "./src/nodes/core/index.ts",
     "./testing": "./src/testing/index.ts"
   },
   "scripts": {
