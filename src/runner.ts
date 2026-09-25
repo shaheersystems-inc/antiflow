@@ -46,7 +46,7 @@ export async function runNode(
   const startedAt = now();
   // The latest persisted record, which a cancel finalizes.
   let latest: NodeRecord = { runId, nodeId: node.id, status: "pending", attempt: 0 };
-  const cancelled = async (): Promise<NodeState> => {
+  const finishCancelled = async (): Promise<NodeState> => {
     await storage.saveNodeRecord({ ...latest, status: "cancelled", completedAt: now() });
     return { status: "cancelled" };
   };
@@ -55,16 +55,16 @@ export async function runNode(
     const attempt = { runId, nodeId: node.id, attempt: attemptNumber };
     const record: NodeRecord = { ...attempt, status: "running", startedAt };
     const outcome = await runAttempt(runner, node, nodeType, input, record, cancel);
-    if (outcome === "not-started") return cancelled();
+    if (outcome.kind === "not-started") return finishCancelled();
 
-    if ("result" in outcome) {
+    if (outcome.kind === "succeeded") {
       await storage.saveNodeRecord({ ...record, status: "succeeded", ...outcome.result, completedAt: now() });
       emit({ type: "node:succeeded", ...attempt });
       return { status: "succeeded", ...outcome.result };
     }
     let error = outcome.error;
     latest = { ...record, error };
-    if (cancel.aborted) return cancelled();
+    if (cancel.aborted) return finishCancelled();
     const delay = attemptNumber < maxAttempts ? backoffDelay(node.retry!, attemptNumber) : undefined;
     if (typeof delay === "string") error = delay;
     if (typeof delay !== "number") {
@@ -75,9 +75,15 @@ export async function runNode(
     // Still running: record the failed attempt's error until the next attempt starts.
     await storage.saveNodeRecord(latest);
     await sleep(delay, cancel);
-    if (cancel.aborted) return cancelled();
+    if (cancel.aborted) return finishCancelled();
   }
 }
+
+type AttemptOutcome =
+  | { kind: "succeeded"; result: NodeResult }
+  | { kind: "failed"; error: string }
+  /** The run was cancelled before the attempt got to start. */
+  | { kind: "not-started" };
 
 /**
  * Runs one attempt in a scheduler slot and resolves with its outcome, or `not-started` if
@@ -92,13 +98,13 @@ function runAttempt(
   input: JsonValue,
   record: NodeRecord,
   cancel: AbortSignal,
-): Promise<{ result: NodeResult } | { error: string } | "not-started"> {
+): Promise<AttemptOutcome> {
   return new Promise((resolve, reject) => {
     scheduler
       .run(
         node.type,
         async () => {
-          if (cancel.aborted) return resolve("not-started");
+          if (cancel.aborted) return resolve({ kind: "not-started" });
           await storage.saveNodeRecord(record);
           const attempt = { runId: record.runId, nodeId: record.nodeId, attempt: record.attempt };
           emit({ type: "node:start", ...attempt });
@@ -113,17 +119,21 @@ function runAttempt(
             handling = Promise.reject(e);
           }
           try {
-            resolve({ result: normalizeResult(nodeType, await withTimeout(handling, node.timeoutMs, controller)) });
+            const returned = await withTimeout(handling, node.timeoutMs, controller);
+            resolve({ kind: "succeeded", result: normalizeResult(nodeType, returned) });
           } catch (e) {
-            resolve({ error: e instanceof Error ? e.message : String(e) });
+            resolve({ kind: "failed", error: e instanceof Error ? e.message : String(e) });
           }
-          await handling.catch(() => {});
-          cancel.removeEventListener("abort", abortOnCancel);
+          try {
+            await handling.catch(() => {});
+          } finally {
+            cancel.removeEventListener("abort", abortOnCancel);
+          }
         },
         cancel,
       )
       // The scheduler rejects with the cancel's reason if the attempt never got a slot.
-      .catch((error) => (cancel.aborted ? resolve("not-started") : reject(error)));
+      .catch((error) => (cancel.aborted ? resolve({ kind: "not-started" }) : reject(error)));
   });
 }
 

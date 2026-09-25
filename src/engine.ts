@@ -15,6 +15,7 @@ import type {
   Logger,
   NodeTypeDefinition,
   RunRecord,
+  RunStatus,
   StorageAdapter,
   WorkflowDefinition,
 } from "./types.ts";
@@ -42,6 +43,8 @@ interface ActiveRun {
   cancel: AbortController;
   /** The write marking the run `cancelling`, once cancelled. */
   cancelling?: Promise<void>;
+  /** Set once in-flight work has drained and the run is being finalized. */
+  finishing?: boolean;
 }
 
 export function createEngine(options: EngineOptions = {}) {
@@ -107,6 +110,8 @@ export function createEngine(options: EngineOptions = {}) {
     }
 
     await Promise.all(inFlight.values());
+    // From here the outcome is settled; a cancel arriving now changes nothing.
+    active.finishing = true;
 
     if (cancel.aborted) {
       // Nodes never dispatched are left unrun by the cancel.
@@ -123,7 +128,7 @@ export function createEngine(options: EngineOptions = {}) {
     return finish(run, failed ? "failed" : "completed");
   }
 
-  async function finish(run: RunRecord, status: "completed" | "failed" | "cancelled"): Promise<RunRecord> {
+  async function finish(run: RunRecord, status: Exclude<RunStatus, "running" | "cancelling">): Promise<RunRecord> {
     const finished: RunRecord = { ...run, status, completedAt: now() };
     await storage.saveRun(finished);
     emit({ type: `run:${status}`, runId: run.id });
@@ -161,6 +166,7 @@ export function createEngine(options: EngineOptions = {}) {
         if (run && run.status !== "running" && run.status !== "cancelling") return;
         throw new Error(`Run "${runId}" is not running in this engine`);
       }
+      if (active.finishing) return;
       if (active.cancelling) return active.cancelling;
       active.cancel.abort();
       active.cancelling = storage.saveRun({ ...active.run, status: "cancelling" });
