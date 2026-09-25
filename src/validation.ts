@@ -1,4 +1,5 @@
-import type { AnyNodeType, WorkflowDefinition } from "./types.ts";
+import type { NodeTypeRegistry } from "./registry.ts";
+import type { WorkflowDefinition } from "./types.ts";
 
 export type ValidationIssue =
   | { code: "duplicate-node-id"; nodeId: string; message: string }
@@ -32,7 +33,7 @@ export class WorkflowValidationError extends Error {
 
 export function validateWorkflow(
   workflow: WorkflowDefinition,
-  registry: ReadonlyMap<string, AnyNodeType>,
+  registry: Pick<NodeTypeRegistry, "get">,
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const seenIds = new Set<string>();

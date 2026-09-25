@@ -51,6 +51,8 @@ export interface NodeTypeDefinition<
   outputs: readonly Out[];
   config: z.ZodType<Config>;
   display: DisplayMetadata;
+  /** Trigger-capable: declares no input ports, so a UI can show where a run begins. Metadata only. */
+  trigger?: boolean;
   handler: (input: NodeInput<In>, config: Config, context: NodeContext) => Promise<JsonValue>;
 }
 
