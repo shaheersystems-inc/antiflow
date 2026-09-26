@@ -1,0 +1,53 @@
+[
+  {
+    "text": "Introduction",
+    "items": [{ "text": "What is antiflow?", "link": "index.md" }]
+  },
+  {
+    "text": "Getting started",
+    "items": [
+      { "text": "Installation", "link": "getting-started/installation.md" },
+      { "text": "Quickstart", "link": "getting-started/quickstart.md" }
+    ]
+  },
+  {
+    "text": "Core concepts",
+    "items": [
+      { "text": "Workflows", "link": "concepts/workflows.md" },
+      { "text": "Node types", "link": "concepts/node-types.md" },
+      { "text": "Runs and execution", "link": "concepts/execution.md" }
+    ]
+  },
+  {
+    "text": "Guides",
+    "items": [
+      { "text": "Writing node types", "link": "guides/writing-node-types.md" },
+      { "text": "Branching and merging", "link": "guides/branching-and-merging.md" },
+      { "text": "Timeouts and retries", "link": "guides/timeouts-and-retries.md" },
+      { "text": "Cancellation", "link": "guides/cancellation.md" },
+      { "text": "Persistence and resume", "link": "guides/persistence-and-resume.md" },
+      { "text": "Events and logging", "link": "guides/events-and-logging.md" },
+      { "text": "Credentials", "link": "guides/credentials.md" },
+      { "text": "Building a UI", "link": "guides/building-a-ui.md" },
+      { "text": "Writing a storage adapter", "link": "guides/storage-adapters.md" },
+      { "text": "Testing", "link": "guides/testing.md" }
+    ]
+  },
+  {
+    "text": "Reference",
+    "items": [
+      { "text": "Engine API", "link": "reference/engine.md" },
+      { "text": "Types", "link": "reference/types.md" },
+      { "text": "Validation issues", "link": "reference/validation-issues.md" },
+      { "text": "Core nodes", "link": "reference/core-nodes.md" },
+      { "text": "antiflow/testing", "link": "reference/testing.md" }
+    ]
+  },
+  {
+    "text": "More",
+    "items": [
+      { "text": "Design and limitations", "link": "design.md" },
+      { "text": "Glossary", "link": "glossary.md" }
+    ]
+  }
+]

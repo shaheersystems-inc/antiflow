@@ -42,7 +42,9 @@ Follow the architecture below rather than inventing structure ad hoc.
 - `src/nodes/core/` — `antiflow/nodes/core` entry point: the core nodes (If, Switch, Merge, Set,
   Delay) and `registerCoreNodes`. Uses only the public API.
 - `src/testing/` — `antiflow/testing` entry point: the storage adapter conformance suite.
-  Adapter rules are documented in `docs/storage-adapters.md`.
+  Adapter rules are documented in `docs/site/guides/storage-adapters.md`.
+- `docs/site/` — the user-facing library docs, written for the official docs site (section
+  order in `docs/site/sidebar.json`). Update them alongside any change to public behaviour.
 - `test/` — tests through the public engine API only, using fake node types defined in
   the test. Domain vocabulary for names is in `CONTEXT.md`.
 
