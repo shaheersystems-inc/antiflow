@@ -156,10 +156,11 @@ export interface NodeRecord {
 
 /**
  * Host-supplied persistence for run records and node records; see
- * `docs/storage-adapters.md`. Every write is a whole-record upsert: it replaces any stored
- * record with the same key, dropping fields the new record leaves out. No transactions or
- * cross-record atomicity are required. Records hold only JSON values and must read back
- * unchanged. Run the conformance suite from `antiflow/testing` against an implementation.
+ * `docs/site/guides/storage-adapters.md`. Every write is a whole-record upsert: it replaces
+ * any stored record with the same key, dropping fields the new record leaves out. No
+ * transactions or cross-record atomicity are required. Records hold only JSON values and must
+ * read back unchanged. Run the conformance suite from `antiflow/testing` against an
+ * implementation.
  */
 export interface StorageAdapter {
   /** Stores `run`, replacing any run record with the same `id`. */
