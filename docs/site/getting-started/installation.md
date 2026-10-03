@@ -23,11 +23,19 @@ description: Requirements and how to add antiflow to a project.
 
 ## Install from GitHub
 
-For now the package ships TypeScript source, so run it with a runtime that loads `.ts`
-files directly, such as Bun or Deno.
+Installing from GitHub builds the package on your machine through its `prepare` script, so
+it works on any supported runtime, not only those that load TypeScript directly.
+
+```bash
+npm install github:shaheersystems-inc/antiflow zod
+```
+
+Bun doesn't run install scripts for dependencies it doesn't trust, so with Bun, trust the
+package once after adding it. Without this step, `antiflow` can't be imported.
 
 ```bash
 bun add github:shaheersystems-inc/antiflow zod
+bun pm trust antiflow
 ```
 
 ## Install from npm (once published)
