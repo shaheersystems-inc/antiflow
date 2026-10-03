@@ -31,8 +31,9 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "build": "rm -rf dist && tsc -p tsconfig.build.json && bun scripts/fix-dts-extensions.ts",
-    "prepublishOnly": "bun run typecheck && bun test && bun run build"
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node scripts/fix-dts-extensions.mjs",
+    "prepare": "npm run build",
+    "prepublishOnly": "bun run typecheck && bun test"
   },
   "dependencies": {
     "zod": "^4.6.5"
