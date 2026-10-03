@@ -1,6 +1,6 @@
 ---
 title: Core nodes
-description: Reference for the built-in control-flow node types: If, Switch, Merge, Set and Delay.
+description: "Reference for the built-in control-flow node types: If, Switch, Merge, Set and Delay."
 ---
 
 # Core nodes

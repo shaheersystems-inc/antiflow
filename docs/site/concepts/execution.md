@@ -1,6 +1,6 @@
 ---
 title: Runs and execution
-description: How a run executes: concurrency, skip propagation, failure isolation, statuses and the at-least-once guarantee.
+description: "How a run executes: concurrency, skip propagation, failure isolation, statuses and the at-least-once guarantee."
 ---
 
 # Runs and execution

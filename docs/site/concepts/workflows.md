@@ -1,6 +1,6 @@
 ---
 title: Workflows
-description: Workflow definitions: nodes, ports, edges, the data that flows between them, and how they're validated.
+description: "Workflow definitions: nodes, ports, edges, the data that flows between them, and how they're validated."
 ---
 
 # Workflows
