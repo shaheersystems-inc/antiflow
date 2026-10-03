@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/shaheersystems-inc/antiflow/discussions
+    about: Ask how to use antiflow or discuss ideas before opening a feature request.
+  - name: Report a security vulnerability
+    url: https://github.com/shaheersystems-inc/antiflow/security/advisories/new
+    about: Report security problems privately, not as an issue.
