@@ -43,6 +43,8 @@ Follow the architecture below rather than inventing structure ad hoc.
   Delay) and `registerCoreNodes`. Uses only the public API.
 - `src/testing/` — `antiflow/testing` entry point: the storage adapter conformance suite.
   Adapter rules are documented in `docs/site/guides/storage-adapters.md`.
+- `skills/antiflow/` — the Agent Skill that teaches AI agents to use the library (for
+  consumers, not for working on this repo). Keep it in sync with `docs/site/`.
 - `docs/site/` — the user-facing library docs, written for the official docs site (section
   order in `docs/site/sidebar.json`). Update them alongside any change to public behaviour.
 - `test/` — tests through the public engine API only, using fake node types defined in

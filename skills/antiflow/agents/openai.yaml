@@ -1,0 +1,3 @@
+interface:
+  display_name: "antiflow"
+  short_description: "Build node types, workflows and hosts on antiflow"
