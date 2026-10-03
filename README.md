@@ -83,6 +83,20 @@ The section order for a docs site generator is in
 reasoning are recorded in
 [`docs/design/workflow-engine-design.md`](docs/design/workflow-engine-design.md).
 
+## Agent skill
+
+[`skills/antiflow/`](skills/antiflow/SKILL.md) is an [Agent Skill](https://agentskills.io) that
+teaches AI coding agents (Claude Code, Codex, Cursor and others) to use antiflow: writing node
+types, authoring workflows, embedding the engine and testing. Install it into your project
+with:
+
+```bash
+npx skills add shaheersystems-inc/antiflow
+```
+
+Or copy the `skills/antiflow/` folder into your agent's skills directory, such as
+`.claude/skills/`.
+
 ## Writing node types: the execution guarantee
 
 antiflow runs every handler **at least once, not exactly once**: retries, resumes and

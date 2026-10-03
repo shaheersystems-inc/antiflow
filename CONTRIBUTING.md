@@ -74,6 +74,9 @@ If a change affects behaviour a user can see (API, events, records, validation i
 node behaviour), update the matching pages in [`docs/site/`](docs/site/index.md) in the same
 PR, and add an entry under **Unreleased** in [`CHANGELOG.md`](CHANGELOG.md).
 
+The agent skill in [`skills/antiflow/`](skills/antiflow/SKILL.md) condenses the same
+documentation for AI coding agents. Update it too when a change affects what it says.
+
 ## Issues
 
 - **Bugs**: use the bug report template and include a minimal workflow definition and the
