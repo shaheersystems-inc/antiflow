@@ -1,23 +1,44 @@
 {
   "name": "antiflow",
+  "version": "0.1.0-beta.0",
+  "description": "An embeddable, JSON-declared nodes-and-edges workflow execution engine.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shaheersystems-inc/antiflow.git"
+  },
   "type": "module",
-  "private": true,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts",
-    "./nodes/core": "./src/nodes/core/index.ts",
-    "./testing": "./src/testing/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./nodes/core": {
+      "types": "./dist/nodes/core/index.d.ts",
+      "default": "./dist/nodes/core/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "default": "./dist/testing/index.js"
+    }
   },
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && bun scripts/fix-dts-extensions.ts",
+    "prepublishOnly": "bun run typecheck && bun test && bun run build"
   },
   "dependencies": {
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
+    "@types/bun": "latest",
+    "typescript": "^7.0.2"
   }
 }
