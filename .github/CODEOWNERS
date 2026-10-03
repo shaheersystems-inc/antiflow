@@ -1,0 +1,8 @@
+# Default owner for everything in the repository.
+* @shaheersystems
+
+# Security-sensitive and contract-defining areas. Same owner for now; listed separately so
+# new maintainers can be added per area.
+/src/credentials.ts @shaheersystems
+/src/testing/ @shaheersystems
+/docs/design/ @shaheersystems

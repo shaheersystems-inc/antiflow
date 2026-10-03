@@ -1,5 +1,9 @@
 # antiflow
 
+[![CI](https://github.com/shaheersystems-inc/antiflow/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/shaheersystems-inc/antiflow/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/antiflow/beta?label=npm%40beta)](https://www.npmjs.com/package/antiflow)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A nodes-and-edges workflow execution engine, declared via JSON, meant to be the
 **backend/library** layer underneath something like an n8n or Make.com — no UI, no owned
 HTTP/scheduler service, but rich enough in its type/metadata surface to be plugged into one.
@@ -44,7 +48,7 @@ console.log((await run.finished).status); // "completed"
 ```
 
 > **Status**: the v1 engine is implemented. It isn't published to npm yet
-> ([#30](https://github.com/shaheersystems/antiflow/issues/30)).
+> ([#30](https://github.com/shaheersystems-inc/antiflow/issues/30)).
 
 ## Documentation
 
@@ -94,3 +98,14 @@ bun install
 bun test
 bun run typecheck
 ```
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup,
+ground rules and how pull requests are reviewed, and please follow the
+[Code of Conduct](CODE_OF_CONDUCT.md). Report security problems privately as described in
+[SECURITY.md](SECURITY.md). Notable changes are recorded in [CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+[MIT](LICENSE)

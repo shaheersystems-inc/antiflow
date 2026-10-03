@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest a new capability or a change to existing behaviour.
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        antiflow v1 deliberately leaves some things out: cyclic graphs and loop nodes,
+        sub-workflows, a per-item data model, inline code nodes, templating in node config,
+        and distributed execution. The reasoning is in
+        [Design and limitations](https://github.com/shaheersystems-inc/antiflow/blob/main/docs/site/design.md).
+        Requests in those areas are welcome, but please explain why the trade-off should change.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How you'd like it to work. API sketches are welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you've tried, such as a custom node type or host-side code.
+  - type: textarea
+    id: scope
+    attributes:
+      label: How does this fit antiflow's scope?
+      description: |
+        Does it belong in the core engine, in `antiflow/nodes/core`, or in a separate
+        package? Does it touch one of the v1 non-goals listed above?
+    validations:
+      required: true

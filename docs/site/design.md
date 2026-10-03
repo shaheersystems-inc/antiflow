@@ -6,7 +6,7 @@ description: The principles behind antiflow, what v1 deliberately leaves out, an
 # Design and limitations
 
 antiflow's design choices were settled up front and recorded, with their reasoning, in the
-[design record](https://github.com/shaheersystems/antiflow/blob/main/docs/design/workflow-engine-design.md).
+[design record](https://github.com/shaheersystems-inc/antiflow/blob/main/docs/design/workflow-engine-design.md).
 This page summarizes them for users.
 
 ## Principles

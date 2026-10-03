@@ -292,5 +292,6 @@ weigh the same tradeoffs rather than re-litigating from scratch.
 Nothing remaining in the architecture-level design tree was left open at the end of the
 grilling session — the frontier was explicitly confirmed empty by the user. Anything not
 listed above (exact JSON field names, package/module naming, validation error message
-format, testing utilities, license/open-source status) is an implementation detail to be
-decided during scaffolding, not a settled architectural decision.
+format, testing utilities) is an implementation detail to be decided during scaffolding,
+not a settled architectural decision. License/open-source status has since been decided:
+antiflow is open source under the MIT License (see `LICENSE`).

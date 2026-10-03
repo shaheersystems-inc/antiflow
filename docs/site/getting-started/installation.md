@@ -7,7 +7,7 @@ description: Requirements and how to add antiflow to a project.
 
 > [!WARNING]
 > antiflow hasn't been published to npm yet. Publishing is tracked in
-> [#30](https://github.com/shaheersystems/antiflow/issues/30). Until then, install it from
+> [#30](https://github.com/shaheersystems-inc/antiflow/issues/30). Until then, install it from
 > GitHub (see below). The package name and install command on this page may change when it's
 > published.
 
@@ -27,7 +27,7 @@ For now the package ships TypeScript source, so run it with a runtime that loads
 files directly, such as Bun or Deno.
 
 ```bash
-bun add github:shaheersystems/antiflow zod
+bun add github:shaheersystems-inc/antiflow zod
 ```
 
 ## Install from npm (once published)

@@ -147,7 +147,7 @@ and update it (not just this file) if an architectural decision changes.
 
 ### Issue tracker
 
-Issues and specs live in GitHub Issues on shaheersystems/antiflow (via `gh`). See `docs/agents/issue-tracker.md`.
+Issues and specs live in GitHub Issues on shaheersystems-inc/antiflow (via `gh`). See `docs/agents/issue-tracker.md`.
 
 ### Domain docs
 
