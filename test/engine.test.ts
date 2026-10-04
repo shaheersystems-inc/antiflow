@@ -156,4 +156,62 @@ describe("execute", () => {
 
     expect(events).toEqual([]);
   });
+
+  test("a subscriber that throws neither affects the run nor other subscribers, and is logged", async () => {
+    const storage = createInMemoryStorage();
+    const errors: { message: string; fields?: Record<string, unknown> }[] = [];
+    const ignore = () => {};
+    const engine = createEngine({
+      storage,
+      logger: { debug: ignore, info: ignore, warn: ignore, error: (message, fields) => void errors.push({ message, fields }) },
+    });
+    engine.register(upper);
+    engine.register(append);
+    engine.subscribe(() => {
+      throw new Error("listener broke");
+    });
+    const events: EngineEvent[] = [];
+    engine.subscribe((event) => events.push(event));
+
+    const run = await engine.execute(
+      {
+        nodes: [
+          { id: "a", type: "test.upper@1", config: {} },
+          { id: "b", type: "test.append@1", config: { suffix: "!" } },
+        ],
+        edges: [edge("a", "b")],
+      },
+      "hi",
+    );
+
+    expect(await run.finished).toMatchObject({ status: "completed" });
+    const outputs = Object.fromEntries((await storage.listNodeRecords(run.id)).map((r) => [r.nodeId, r.output]));
+    expect(outputs).toEqual({ a: "HI", b: "HI!" });
+    expect(events.map((e) => e.type)).toEqual([
+      "node:start",
+      "node:succeeded",
+      "node:start",
+      "node:succeeded",
+      "run:completed",
+    ]);
+    expect(errors).toHaveLength(5);
+    expect(errors[0]).toMatchObject({ fields: { runId: run.id, error: "listener broke" } });
+  });
+
+  test("logs an async subscriber's rejection instead of leaving it unhandled", async () => {
+    const errors: { message: string; fields?: Record<string, unknown> }[] = [];
+    const ignore = () => {};
+    const engine = createEngine({
+      logger: { debug: ignore, info: ignore, warn: ignore, error: (message, fields) => void errors.push({ message, fields }) },
+    });
+    engine.register(upper);
+    engine.subscribe(async () => {
+      throw new Error("async listener broke");
+    });
+
+    const run = await engine.execute({ nodes: [{ id: "a", type: "test.upper@1", config: {} }], edges: [] }, "hi");
+
+    expect(await run.finished).toMatchObject({ status: "completed" });
+    expect(errors.map((e) => e.fields?.event)).toEqual(["node:start", "node:succeeded", "run:completed"]);
+  });
 });

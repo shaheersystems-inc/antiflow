@@ -45,8 +45,11 @@ Things to know:
   node record is saved, so a read triggered by the event sees the result.
 - **Errors in events are redacted** of resolved credentials, like everything else.
 - **Cancelled nodes get no event.** `run:cancelled` stands for all of them.
-- **Listeners are called synchronously.** Keep them fast, and don't throw from them: hand
-  heavy work, such as pushing to a WebSocket, off to a queue.
+- **Listeners are called synchronously.** Keep them fast: hand heavy work, such as pushing to
+  a WebSocket, off to a queue. The engine doesn't wait for an async listener.
+- **A failing listener can't break a run.** An error a listener throws, or a promise it
+  returns rejects with, is logged at `error` level with the `runId`, `event` type and
+  `error`. The run and the other listeners carry on.
 - **Events are not durable.** A process that wasn't subscribed, or restarted, reads state from
   the [storage adapter](persistence-and-resume.md#whats-persisted) instead.
 

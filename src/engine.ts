@@ -75,8 +75,22 @@ export function createEngine(options: EngineOptions = {}) {
   const scheduler = createInProcessScheduler(options.concurrency);
   const listeners = new Set<(event: EngineEvent) => void>();
 
+  // A subscriber's error, thrown or rejected, is logged and never reaches the run.
   const emit = (event: EngineEvent) => {
-    for (const listener of listeners) listener(event);
+    const report = (e: unknown) =>
+      logger.error("Event subscriber threw", {
+        runId: event.runId,
+        event: event.type,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    for (const listener of listeners) {
+      try {
+        const returned: unknown = listener(event);
+        if (returned instanceof Promise) returned.catch(report);
+      } catch (e) {
+        report(e);
+      }
+    }
   };
   const runner: RunnerContext = { storage, scheduler, logger, emit, credentials: options.credentials };
   const activeRuns = new Map<string, ActiveRun>();
