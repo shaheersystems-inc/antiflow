@@ -130,7 +130,8 @@ subscribe(listener: (event: EngineEvent) => void): () => void;
 ```
 
 Listens to live events from every run of the engine. Returns a function that unsubscribes.
-Listeners are called synchronously. See [Events and logging](../guides/events-and-logging.md)
+Listeners are called synchronously. An error a listener throws (or rejects with) is logged
+and never affects the run or other listeners. See [Events and logging](../guides/events-and-logging.md)
 and [`EngineEvent`](types.md#engineevent).
 
 ## `defineNodeType(definition)`

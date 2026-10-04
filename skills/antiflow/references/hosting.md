@@ -110,8 +110,9 @@ const unsubscribe = engine.subscribe((event) => {
   the last attempt, and carries `error`. `node:succeeded` fires after the result is persisted.
 - Events carry **no outputs**. Read them from storage.
 - Cancelled nodes get **no** node event. `run:cancelled` stands for all of them.
-- Listeners are called synchronously. Keep them fast and never throw. Hand heavy work (a
-  WebSocket push) to a queue.
+- Listeners are called synchronously. Keep them fast. Hand heavy work (a WebSocket push) to
+  a queue. A listener that throws or rejects is logged at `error` level and can't break the
+  run or other listeners.
 - Events aren't durable. To stream a run to a client, **subscribe first, then read** the
   current records from storage, so nothing is missed between the two.
 
