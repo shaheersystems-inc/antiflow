@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { createEngine, createInMemoryStorage, defineNodeType, NodeTypeRegistrationError } from "../src/index.ts";
-import { append, edge, upper } from "./fixtures.ts";
+import { append, edge, upper, checkTransitions } from "./fixtures.ts";
 
 /** Fake node type with the given version: outputs `v<version>`, ignoring its input. */
 function versioned(version: number) {
@@ -115,7 +115,7 @@ describe("listNodeTypes", () => {
 
 describe("node type versions", () => {
   test("registers several versions of a type at once; each node runs the exact version it names", async () => {
-    const storage = createInMemoryStorage();
+    const storage = checkTransitions(createInMemoryStorage());
     const engine = createEngine({ storage });
     engine.register(versioned(1));
     engine.register(versioned(2));
@@ -204,7 +204,7 @@ describe("registration", () => {
   });
 
   test("still runs workflows with a trigger-capable node type feeding others", async () => {
-    const storage = createInMemoryStorage();
+    const storage = checkTransitions(createInMemoryStorage());
     const engine = createEngine({ storage });
     engine.register({ ...upper, trigger: true });
     engine.register(append);

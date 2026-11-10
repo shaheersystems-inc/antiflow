@@ -2,11 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { createEngine, createInMemoryStorage, defineNodeType } from "../src/index.ts";
 import type { EngineEvent } from "../src/index.ts";
-import { append, edge, upper } from "./fixtures.ts";
+import { append, edge, upper, checkTransitions } from "./fixtures.ts";
 
 describe("execute", () => {
   test("runs a single-node workflow on the trigger input and completes the run", async () => {
-    const storage = createInMemoryStorage();
+    const storage = checkTransitions(createInMemoryStorage());
     const engine = createEngine({ storage });
     engine.register(upper);
 
@@ -22,7 +22,7 @@ describe("execute", () => {
   });
 
   test("passes each node's output along edges to the next node in dependency order", async () => {
-    const storage = createInMemoryStorage();
+    const storage = checkTransitions(createInMemoryStorage());
     const engine = createEngine({ storage });
     engine.register(upper);
     engine.register(append);
@@ -112,7 +112,7 @@ describe("execute", () => {
   });
 
   test("persists a run record and a node record with snapshot, input and timestamps", async () => {
-    const storage = createInMemoryStorage();
+    const storage = checkTransitions(createInMemoryStorage());
     const engine = createEngine({ storage });
     engine.register(upper);
     const workflow = { nodes: [{ id: "a", type: "test.upper@1", config: {} }], edges: [] };
@@ -158,7 +158,7 @@ describe("execute", () => {
   });
 
   test("a subscriber that throws neither affects the run nor other subscribers, and is logged", async () => {
-    const storage = createInMemoryStorage();
+    const storage = checkTransitions(createInMemoryStorage());
     const errors: { message: string; fields?: Record<string, unknown> }[] = [];
     const ignore = () => {};
     const engine = createEngine({

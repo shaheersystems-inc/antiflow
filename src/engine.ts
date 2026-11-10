@@ -1,4 +1,6 @@
 import type { CredentialStore } from "./credentials.ts";
+import { canResume, isNodeFinished, keepsResultOnResume } from "./lifecycle.ts";
+import type { RunEndStatus } from "./lifecycle.ts";
 import { plan } from "./planner.ts";
 import type { NodeState } from "./planner.ts";
 import { isOptionalInput, NodeTypeRegistry } from "./registry.ts";
@@ -16,7 +18,6 @@ import type {
   Logger,
   NodeTypeDefinition,
   RunRecord,
-  RunStatus,
   StorageAdapter,
   WorkflowDefinition,
   WorkflowNode,
@@ -176,7 +177,7 @@ export function createEngine(options: EngineOptions = {}) {
     return finish(run, failed ? "failed" : "completed");
   }
 
-  async function finish(run: RunRecord, status: Exclude<RunStatus, "running" | "cancelling">): Promise<RunRecord> {
+  async function finish(run: RunRecord, status: RunEndStatus): Promise<RunRecord> {
     const finished: RunRecord = { ...run, status, completedAt: now() };
     await storage.saveRun(finished);
     emit({ type: `run:${status}`, runId: run.id });
@@ -190,7 +191,7 @@ export function createEngine(options: EngineOptions = {}) {
   async function prepareResume(runId: string) {
     const stored = await storage.getRun(runId);
     if (!stored) throw new ResumeError(runId, "not-found", `Run "${runId}" not found`);
-    if (stored.status !== "running" && stored.status !== "failed") {
+    if (!canResume(stored.status)) {
       throw new ResumeError(runId, "not-resumable", `Run "${runId}" is ${stored.status} and can't be resumed`);
     }
     const unregistered = stored.workflowSnapshot.nodes
@@ -209,8 +210,7 @@ export function createEngine(options: EngineOptions = {}) {
 
     const settled = new Map<string, NodeState>();
     for (const { nodeId, status, output, outputsByPort } of await storage.listNodeRecords(runId)) {
-      if (status === "succeeded") settled.set(nodeId, { status, output, outputsByPort });
-      if (status === "skipped") settled.set(nodeId, { status });
+      if (keepsResultOnResume(status)) settled.set(nodeId, { status, output, outputsByPort });
     }
     const { completedAt: _, ...rest } = stored;
     const run: RunRecord = { ...rest, status: "running" };
@@ -220,9 +220,7 @@ export function createEngine(options: EngineOptions = {}) {
 
   /** Finishes a run a crashed engine left `cancelling`: every unfinished node is cancelled. */
   async function finalizeCancel(run: RunRecord): Promise<void> {
-    const unfinished = (await storage.listNodeRecords(run.id)).filter(
-      (r) => r.status === "pending" || r.status === "running",
-    );
+    const unfinished = (await storage.listNodeRecords(run.id)).filter((r) => !isNodeFinished(r.status));
     await Promise.all(
       unfinished.map((r) => storage.saveNodeRecord({ ...r, status: "cancelled", completedAt: now() })),
     );

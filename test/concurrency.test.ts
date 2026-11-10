@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { createEngine, createInMemoryStorage, defineNodeType } from "../src/index.ts";
 import type { EngineEvent, WorkflowNode } from "../src/index.ts";
-import { edge, join, relay, sleep } from "./fixtures.ts";
+import { edge, join, relay, sleep, checkTransitions } from "./fixtures.ts";
 
 /** Records how many handlers are in flight at once, overall and per node type. */
 function tracker() {
@@ -61,7 +61,7 @@ describe("concurrent execution", () => {
   });
 
   test("runs parallel branches and starts a node only once all its inputs have resolved", async () => {
-    const storage = createInMemoryStorage();
+    const storage = checkTransitions(createInMemoryStorage());
     const engine = createEngine({ storage });
     const track = tracker();
     engine.register(slow("test.slow", track));
@@ -157,7 +157,7 @@ describe("concurrency caps", () => {
   });
 
   test("a node waiting for a slot is recorded as pending", async () => {
-    const storage = createInMemoryStorage();
+    const storage = checkTransitions(createInMemoryStorage());
     const engine = createEngine({ storage, concurrency: { global: 1 } });
     const track = tracker();
     engine.register(slow("test.slow", track, 30));

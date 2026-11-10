@@ -79,6 +79,11 @@ code, tests, issues, and docs. The reasoning behind the concepts lives in
 - **Run status** — `running`, `cancelling`, `cancelled`, `completed`, `failed`.
 - **Node status** — `pending`, `running`, `succeeded`, `failed`, `skipped`, and `cancelled`
   for nodes a cancel left unrun (or stopped mid-attempt).
+- **Lifecycle** — the legal transitions between run statuses (and between node statuses),
+  defined once in `src/lifecycle.ts` (`runTransitions`, `nodeTransitions`) and exported.
+- **Finished** — a run that `completed`, `failed` or was `cancelled` (no engine drives it); a
+  node that is neither `pending` nor `running`. _Avoid: "final", "terminal" for these:
+  a `failed` run or node can still be resumed._
 
 ## Infrastructure
 

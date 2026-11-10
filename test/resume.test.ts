@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { createEngine, createInMemoryStorage, defineNodeType, ResumeError } from "../src/index.ts";
 import type { EngineEvent, StorageAdapter, WorkflowDefinition } from "../src/index.ts";
-import { append, edge, node, sleep, upper } from "./fixtures.ts";
+import { append, edge, node, sleep, upper, checkTransitions } from "./fixtures.ts";
 
 /**
  * Fake node types whose behaviour a test can switch while runs are in flight: `test.step`
@@ -63,7 +63,7 @@ const statuses = async (storage: StorageAdapter, runId: string) =>
 
 describe("snapshot", () => {
   test("changing the workflow definition after execute() has no effect on the run", async () => {
-    const storage = createInMemoryStorage();
+    const storage = checkTransitions(createInMemoryStorage());
     const engine = createEngine({ storage });
     engine.register(append);
     engine.register(
@@ -102,7 +102,7 @@ describe("snapshot", () => {
 
 describe("resume", () => {
   test("a new engine over the same storage resumes an interrupted run to completion", async () => {
-    const storage = createInMemoryStorage();
+    const storage = checkTransitions(createInMemoryStorage());
     const first = engineOver(storage);
     first.mode.b = "hang";
     const bStarted = first.untilStarted("b");
@@ -131,7 +131,7 @@ describe("resume", () => {
   });
 
   test("retries a failed node, then runs its downstream and updates the run's final status", async () => {
-    const storage = createInMemoryStorage();
+    const storage = checkTransitions(createInMemoryStorage());
     const { engine, calls, mode } = engineOver(storage);
     mode.b = "fail";
     const run = await engine.execute(chain, "go");
@@ -150,7 +150,7 @@ describe("resume", () => {
   });
 
   test("a retried node gets a fresh set of attempts", async () => {
-    const storage = createInMemoryStorage();
+    const storage = checkTransitions(createInMemoryStorage());
     const { engine, mode } = engineOver(storage);
     mode.b = "fail";
     const workflow: WorkflowDefinition = {
@@ -171,7 +171,7 @@ describe("resume", () => {
   });
 
   test("keeps skipped nodes skipped", async () => {
-    const storage = createInMemoryStorage();
+    const storage = checkTransitions(createInMemoryStorage());
     const { engine, calls, mode } = engineOver(storage);
     engine.register(
       defineNodeType({
@@ -202,7 +202,7 @@ describe("resume", () => {
   });
 
   test("resumes against the snapshot, not the node types' current registrations of other versions", async () => {
-    const storage = createInMemoryStorage();
+    const storage = checkTransitions(createInMemoryStorage());
     const first = engineOver(storage);
     first.mode.b = "fail";
     const run = await first.engine.execute(chain, "go");
@@ -228,7 +228,7 @@ describe("resume", () => {
   });
 
   test("refuses to resume a run that doesn't exist, has completed, or is still running here", async () => {
-    const storage = createInMemoryStorage();
+    const storage = checkTransitions(createInMemoryStorage());
     const { engine, mode } = engineOver(storage);
 
     await expect(engine.resume("no-such-run")).rejects.toThrow(/no-such-run/);
@@ -245,7 +245,7 @@ describe("resume", () => {
   });
 
   test("resume refusals carry a reason", async () => {
-    const storage = createInMemoryStorage();
+    const storage = checkTransitions(createInMemoryStorage());
     const { engine } = engineOver(storage);
     const done = await engine.execute(chain, "go");
     await done.finished;
@@ -260,7 +260,7 @@ describe("resume", () => {
   });
 
   test("edits to the workflow definition after execute() don't reach the resumed run", async () => {
-    const storage = createInMemoryStorage();
+    const storage = checkTransitions(createInMemoryStorage());
     const { engine, mode } = engineOver(storage);
     engine.register(append);
     mode.b = "fail";
@@ -282,7 +282,7 @@ describe("resume", () => {
   });
 
   test("a cancel issued while a resume is being prepared cancels the resumed run", async () => {
-    const storage = createInMemoryStorage();
+    const storage = checkTransitions(createInMemoryStorage());
     const { engine, calls, mode } = engineOver(storage);
     mode.b = "fail";
     const run = await engine.execute(chain, "go");
@@ -299,7 +299,7 @@ describe("resume", () => {
   });
 
   test("cancel finalizes a run a crashed engine left cancelling", async () => {
-    const storage = createInMemoryStorage();
+    const storage = checkTransitions(createInMemoryStorage());
     const first = engineOver(storage);
     first.mode.b = "hang";
     const bStarted = first.untilStarted("b");

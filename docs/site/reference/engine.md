@@ -177,6 +177,34 @@ interface CredentialStore {
 Host-supplied source of secrets. If `resolve` rejects, the attempt that needed the credential
 fails with `Credential "<id>" could not be resolved`.
 
+## Lifecycle
+
+```ts
+const RUN_STATUSES: readonly RunStatus[];
+const NODE_STATUSES: readonly NodeStatus[];
+const runTransitions: { readonly [S in RunStatus]: readonly RunStatus[] };
+const nodeTransitions: { readonly [S in NodeStatus]: readonly NodeStatus[] };
+
+function canTransitionRun(from: RunStatus, to: RunStatus): boolean;
+function canTransitionNode(from: NodeStatus, to: NodeStatus): boolean;
+function isRunFinished(status: RunStatus): status is RunEndStatus; // completed | failed | cancelled
+function canResume(status: RunStatus): boolean; // running | failed
+function canCancel(status: RunStatus): boolean; // running | cancelling
+function isNodeFinished(status: NodeStatus): boolean; // not pending or running
+function keepsResultOnResume(status: NodeStatus): boolean; // succeeded | skipped
+
+type RunEndStatus = "completed" | "failed" | "cancelled";
+```
+
+The run and node lifecycles as data: every status, and every status each one can move to. The
+engine writes records only along these transitions, and its own checks (what `resume()`
+accepts, which nodes it keeps, what a crashed cancel finalizes) use these same functions. See
+[Statuses](../concepts/execution.md#statuses).
+
+`canResume` and `canCancel` judge the status alone: `resume()` still refuses a run this engine
+is already driving or whose node types aren't registered, and `cancel()` rejects a `running`
+run that another engine is driving.
+
 ## Errors
 
 ### `WorkflowValidationError`

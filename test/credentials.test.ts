@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { createEngine, createInMemoryStorage, credentialRef, defineNodeType } from "../src/index.ts";
 import type { CredentialStore, EngineEvent, JsonValue, StorageAdapter } from "../src/index.ts";
-import { edge, node } from "./fixtures.ts";
+import { edge, node, checkTransitions } from "./fixtures.ts";
 
 const SECRET = "s3cr3t-token-9f8e7d";
 const NESTED_SECRET = { user: "robot", password: "hunter2-but-longer" };
@@ -163,7 +163,7 @@ describe("credentials", () => {
   });
 
   test("still redacts after a resume, resolving the credential again", async () => {
-    const storage = createInMemoryStorage();
+    const storage = checkTransitions(createInMemoryStorage());
     const { store, lookups } = fakeStore();
     const first = setup({ store, storage });
     const run = await first.engine.execute({ nodes: [callNode({ mode: "leak-error" })], edges: [] }, null);

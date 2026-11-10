@@ -107,6 +107,16 @@ nodes, then their halted downstream nodes, without rerunning nodes that already 
 | `completed`  | Every node `succeeded` or was `skipped`. Final.                                   |
 | `failed`     | At least one node `failed`, after every independent branch drained. Resumable.   |
 
+A run moves only along these transitions:
+
+```
+running ──► completed
+   │  └───► failed ──resume──► running
+   └──────► cancelling ──► cancelled
+```
+
+`running → running` also happens, when a run whose engine stopped mid-run is resumed.
+
 ### Node status
 
 | Status      | Meaning                                                                          |
@@ -117,6 +127,43 @@ nodes, then their halted downstream nodes, without rerunning nodes that already 
 | `failed`    | The last attempt failed. `error` holds the message.                              |
 | `skipped`   | Never ran, because its inputs will never resolve.                                |
 | `cancelled` | The run was cancelled before the node finished (or started).                     |
+
+A node moves only along these transitions:
+
+```
+pending ──► running ──► succeeded
+   │           │  └───► failed ──resume──► pending
+   │           └──────► cancelled
+   ├──────────────────► skipped
+   └──────────────────► cancelled
+```
+
+`running → running` is a retry: the failed attempt's `error` is recorded, then the next
+attempt starts. `resume()` also resets `pending` and `running` nodes to `pending`.
+
+### Checking statuses in code
+
+The lifecycle is exported, so a host or UI never has to hard-code which status means what:
+
+| Export                                   | What it answers                                                       |
+| ---------------------------------------- | --------------------------------------------------------------------- |
+| `RUN_STATUSES`, `NODE_STATUSES`          | Every status, in lifecycle order (for filters and legends).           |
+| `runTransitions`, `nodeTransitions`      | The transition tables above, as data.                                 |
+| `canTransitionRun(from, to)`, `canTransitionNode(from, to)` | Whether a write from one status to another is legal. |
+| `isRunFinished(status)`                  | `completed`, `failed` or `cancelled`: no engine is driving the run.   |
+| `canResume(status)`                      | `running` or `failed`: `resume()` accepts it.                         |
+| `canCancel(status)`                      | `running` or `cancelling`: `cancel()` acts on it.                     |
+| `isNodeFinished(status)`                 | Anything but `pending` and `running`.                                 |
+| `keepsResultOnResume(status)`            | `succeeded` or `skipped`: `resume()` keeps the node instead of rerunning it. |
+
+```ts
+import { canCancel, canResume, isRunFinished } from "antiflow";
+
+const run = await storage.getRun(runId);
+showResumeButton(canResume(run.status));
+showCancelButton(canCancel(run.status));
+if (isRunFinished(run.status)) stopPolling();
+```
 
 ## At-least-once execution
 

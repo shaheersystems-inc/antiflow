@@ -1,6 +1,16 @@
 import { z } from "zod";
-import { createEngine, createInMemoryStorage, defineNodeType } from "../src/index.ts";
-import type { EngineEvent, EngineOptions, JsonValue, NodeRecord, RunRecord, WorkflowDefinition } from "../src/index.ts";
+import { canTransitionNode, canTransitionRun, createEngine, createInMemoryStorage, defineNodeType } from "../src/index.ts";
+import type {
+  EngineEvent,
+  EngineOptions,
+  JsonValue,
+  NodeRecord,
+  NodeStatus,
+  RunRecord,
+  RunStatus,
+  StorageAdapter,
+  WorkflowDefinition,
+} from "../src/index.ts";
 
 /** Fake node type: no inputs, upper-cases the trigger input. */
 export const upper = defineNodeType({
@@ -61,12 +71,42 @@ export const relay = defineNodeType({
 export const node = (id: string, type: string, config: unknown = {}) => ({ id, type, config });
 
 /**
- * An engine over in-memory storage that records every event, and an `execute` that waits for
+ * Wraps `storage` so every write must follow the run and node lifecycles (`runTransitions`,
+ * `nodeTransitions`): a run record starts `running`, a node record `pending`, and each later
+ * write moves along a listed transition. An illegal write rejects, failing the run.
+ */
+export function checkTransitions(storage: StorageAdapter): StorageAdapter {
+  const runs = new Map<string, RunStatus>();
+  const nodes = new Map<string, NodeStatus>();
+  const check = <S extends string>(kind: string, from: S | undefined, to: S, initial: S, allowed: (f: S, t: S) => boolean) => {
+    if (from === undefined ? to !== initial : !allowed(from, to)) {
+      throw new Error(`Illegal ${kind} transition ${from ?? "(new)"} → ${to}`);
+    }
+  };
+  return {
+    ...storage,
+    async saveRun(run) {
+      check("run", runs.get(run.id), run.status, "running", canTransitionRun);
+      runs.set(run.id, run.status);
+      await storage.saveRun(run);
+    },
+    async saveNodeRecord(record) {
+      const key = JSON.stringify([record.runId, record.nodeId]);
+      check(`node "${record.nodeId}"`, nodes.get(key), record.status, "pending", canTransitionNode);
+      nodes.set(key, record.status);
+      await storage.saveNodeRecord(record);
+    },
+  };
+}
+
+/**
+ * An engine over in-memory storage (or `options.storage`), checked by `checkTransitions`, that
+ * records every event, and an `execute` that waits for
  * the run to finish and returns it with its node records (by node id) and its events.
  */
 export function harness(options: EngineOptions = {}) {
-  const storage = createInMemoryStorage();
-  const engine = createEngine({ storage, ...options });
+  const storage = checkTransitions(options.storage ?? createInMemoryStorage());
+  const engine = createEngine({ ...options, storage });
   const events: EngineEvent[] = [];
   engine.subscribe((e) => events.push(e));
   const execute = async (

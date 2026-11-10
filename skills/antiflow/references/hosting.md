@@ -93,6 +93,21 @@ Run record: `{ id, status, startedAt, completedAt?, workflowSnapshot, input }`. 
 Node statuses: `pending` (waiting, or halted behind a failure), `running` (an attempt or
 backoff in progress), `succeeded`, `failed`, `skipped`, `cancelled`.
 
+Transitions. Run: `running → completed | failed | cancelling`, `cancelling → cancelled`,
+`failed → running` (resume). Node: `pending → running | skipped | cancelled`,
+`running → succeeded | failed | cancelled | running` (retry), `failed | running → pending`
+(resume). Never hard-code these; import the lifecycle from `antiflow`:
+
+```ts
+import { canCancel, canResume, isNodeFinished, isRunFinished, keepsResultOnResume } from "antiflow";
+// also: RUN_STATUSES, NODE_STATUSES, runTransitions, nodeTransitions, canTransitionRun, canTransitionNode
+canResume(run.status); // running | failed
+canCancel(run.status); // running | cancelling
+isRunFinished(run.status); // completed | failed | cancelled: no engine is driving it
+isNodeFinished(record.status); // not pending or running
+keepsResultOnResume(record.status); // succeeded | skipped
+```
+
 antiflow has **no "list runs" query**. Keep your own index of run ids (per workflow, tenant or
 process) when you start runs.
 

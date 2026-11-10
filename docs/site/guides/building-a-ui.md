@@ -143,7 +143,8 @@ See [Validation issues](../reference/validation-issues.md) for every code.
 Subscribe to events and update node states on the canvas as they arrive: pending, running,
 succeeded, failed or skipped. See
 [Streaming a run to a UI](events-and-logging.md#streaming-a-run-to-a-ui). When
-`run:cancelled` arrives, render every node that isn't final yet as cancelled.
+`run:cancelled` arrives, render every node that isn't finished yet (`!isNodeFinished(status)`)
+as cancelled.
 
 ## Run history
 
@@ -153,6 +154,10 @@ For past runs, or a run opened mid-flight, read from storage:
   from the current version of the workflow, which may have changed since.
 - Each node record has the status, attempt count, result (`output` or `outputsByPort`),
   error and timestamps for that node.
+- Decide which actions to offer from the run's status with `canResume(status)` and
+  `canCancel(status)`, and stop polling once `isRunFinished(status)`. `RUN_STATUSES` and
+  `NODE_STATUSES` list every status for filters and legends. See
+  [Checking statuses in code](../concepts/execution.md#checking-statuses-in-code).
 
 ## Triggers
 

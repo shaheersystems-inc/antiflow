@@ -109,7 +109,7 @@ process, per workflow, per tenant) is up to your adapter or application.
 | `reason`                  | When                                                                  |
 | ------------------------- | --------------------------------------------------------------------- |
 | `not-found`               | No run record with this id.                                           |
-| `not-resumable`           | The run is `completed`, `cancelling` or `cancelled`.                   |
+| `not-resumable`           | The run is `completed`, `cancelling` or `cancelled` (`canResume(status)` is false). |
 | `already-running`         | This engine is already running (or resuming) the run.                 |
 | `unregistered-node-types` | A node type id in the snapshot isn't registered. `error.unregistered` lists each `{ nodeId, type }`. |
 

@@ -30,6 +30,9 @@ Follow the architecture below rather than inventing structure ad hoc.
 - `src/index.ts` — public API; everything a host imports comes from here.
 - `src/engine.ts` — `createEngine` (register, execute, subscribe) and run execution.
 - `src/credentials.ts` — `CredentialStore`, the `credentialRef` schema and secret redaction.
+- `src/lifecycle.ts` — the run and node status lifecycles (transition tables) and the status
+  predicates (`canResume`, `canCancel`, `isRunFinished`, `isNodeFinished`, ...). Any check of
+  what a status means goes through here, never an inline status comparison.
 - `src/logger.ts` — logger wrappers (tagging, mapping).
 - `src/planner.ts` — pure graph planner: which nodes are ready and which are skipped.
 - `src/registry.ts` — the node type registry: registration checks and `listNodeTypes()` info.
@@ -48,7 +51,8 @@ Follow the architecture below rather than inventing structure ad hoc.
 - `docs/site/` — the user-facing library docs, written for the official docs site (section
   order in `docs/site/sidebar.json`). Update them alongside any change to public behaviour.
 - `test/` — tests through the public engine API only, using fake node types defined in
-  the test. Domain vocabulary for names is in `CONTEXT.md`.
+  the test. `harness()` and `checkTransitions()` in `test/fixtures.ts` reject any storage
+  write that breaks the lifecycle, so a new code path that writes an illegal status fails. Domain vocabulary for names is in `CONTEXT.md`.
 
 ## What antiflow is
 
