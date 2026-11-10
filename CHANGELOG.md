@@ -7,6 +7,13 @@ may contain breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- The run and node status lifecycles as data: `runTransitions`, `nodeTransitions`,
+  `RUN_STATUSES` and `NODE_STATUSES`, plus `canResume`, `canCancel`, `isRunFinished`,
+  `isNodeFinished`, `keepsResultOnResume`, `canTransitionRun` and `canTransitionNode`, so a
+  host or UI never hard-codes what a status means.
+
 ## [0.1.0-beta.0]
 
 The first beta: the v1 engine.
